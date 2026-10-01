@@ -1,0 +1,848 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+<title>BioMed Explorer</title>
+<style>
+  :root{
+    --font-sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --emerald-300:#6ee7b7; --emerald-400:#34d399; --emerald-500:#10b981; --emerald-600:#059669;
+    --sky-400:#38bdf8; --purple-400:#c084fc;
+    --surface-card:rgba(255,255,255,.05);
+    --border-soft:rgba(255,255,255,.12);
+    --border-accent:rgba(16,185,129,.35);
+    --text-heading:#fff;
+    --text-body:rgba(255,255,255,.75);
+    --text-muted:rgba(255,255,255,.5);
+    --accent-quiet:#6ee7b7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;min-height:100%}
+  body{font-family:var(--font-sans);color:#fff;background:#020617;overflow-x:hidden}
+  button{font-family:inherit;cursor:pointer;background:none;border:none;color:inherit}
+  a{color:inherit;text-decoration:none}
+  ul{list-style:none;margin:0;padding:0}
+  h1,h2,h3,h4,p{margin:0}
+
+  /* ---------- Fixed dark backdrop + WebGL scene (persists across tabs) ---------- */
+  .backdrop-fixed{position:fixed;inset:0;z-index:0;
+    background:linear-gradient(135deg,rgba(6,78,59,.95) 0%,rgba(19,78,74,.92) 45%,#020617 100%)}
+  .bloom{position:absolute;width:384px;height:384px;border-radius:9999px;filter:blur(64px);pointer-events:none}
+  .bloom-a{top:0;right:0;background:rgba(16,185,129,.18)}
+  .bloom-b{bottom:0;left:0;background:rgba(14,165,233,.14)}
+  #scene{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;pointer-events:auto}
+  .hero-stage{position:relative;overflow:hidden;border-radius:24px;
+    height:clamp(280px,38vw,420px);margin-top:8px;
+    border:1px solid var(--border-accent);background:rgba(255,255,255,.02)}
+  .hero-stage .hint{position:absolute;bottom:12px;left:0;right:0;z-index:2;text-align:center;
+    font-size:11px;font-weight:600;letter-spacing:.04em;color:rgba(255,255,255,.45);pointer-events:none}
+
+  /* ---------- Liquid glass ---------- */
+  .liquid-glass{
+    background:rgba(255,255,255,0.01);background-blend-mode:luminosity;
+    -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);position:relative;overflow:hidden;
+  }
+  .liquid-glass::before{
+    content:'';position:absolute;inset:0;border-radius:inherit;padding:1.4px;
+    background:linear-gradient(to bottom,rgba(255,255,255,.45) 0%,rgba(255,255,255,.15) 20%,
+      transparent 40%,transparent 60%,rgba(255,255,255,.15) 80%,rgba(255,255,255,.45) 100%);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;
+  }
+  .glass-card{background:var(--surface-card);border:1px solid var(--border-soft);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+
+  /* ---------- Page shell ---------- */
+  /* No position/z-index here on purpose: a pure layout container. If it
+     established its own stacking context, nav's z-20 below would be
+     trapped inside it and could never outrank the mobile overlay (a
+     true sibling at z-10) no matter how high we set it. */
+  .page{min-height:100vh;display:flex;flex-direction:column}
+  .nav{position:relative;z-index:20;display:flex;align-items:center;justify-content:space-between;
+    max-width:1280px;margin:0 auto;width:100%;padding:20px 20px 0}
+  @media (min-width:640px){ .nav{padding:28px 32px 0} }
+  @media (min-width:1024px){ .nav{padding:28px 48px 0} }
+
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-tile{flex:none;width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(155deg,#34d399,#006e2f);display:grid;place-items:center;
+    box-shadow:0 2px 6px rgba(6,110,47,.35)}
+  .logo-word{font-size:16px;font-weight:700;letter-spacing:-.01em}
+
+  .tab-pill{display:none;align-items:center;gap:6px;padding:6px;border-radius:9999px}
+  .tab-btn{padding:9px 22px;border-radius:9999px;font-size:14px;font-weight:600;color:var(--text-body);
+    transition:background 200ms,color 200ms}
+  .tab-btn.active{background:var(--emerald-600);color:#fff}
+  .tab-btn:not(.active):hover{color:#fff}
+
+  .nav-right{display:none;align-items:center;gap:12px}
+  .icon-btn{height:40px;width:40px;border-radius:9999px;display:flex;align-items:center;justify-content:center}
+  .hamburger{display:flex;height:40px;width:40px;border-radius:9999px;align-items:center;justify-content:center;
+    position:relative;z-index:5}
+  .hamburger .ico{position:absolute;transition:transform 300ms,opacity 300ms}
+  .hamburger .ico.hide{transform:rotate(90deg) scale(0);opacity:0}
+  @media (min-width:768px){ .tab-pill{display:flex} .nav-right{display:flex} .hamburger{display:none} }
+
+  .mobile-menu{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:28px;background:rgba(0,0,0,.82);-webkit-backdrop-filter:blur(24px);
+    backdrop-filter:blur(24px);opacity:0;pointer-events:none;transition:opacity 400ms ease-out}
+  .mobile-menu.open{opacity:1;pointer-events:auto}
+  .mobile-menu button{font-size:1.4rem;font-weight:600}
+  @media (min-width:768px){ .mobile-menu{display:none} }
+
+  /* ---------- Panels ---------- */
+  .panels{position:relative;z-index:10;flex:1;max-width:1280px;margin:0 auto;width:100%;padding:0 20px 64px;
+    pointer-events:none}
+  .panels a,.panels button{pointer-events:auto}
+  @media (min-width:640px){ .panels{padding:0 32px 64px} }
+  @media (min-width:1024px){ .panels{padding:0 48px 72px} }
+  .panel{display:none;flex-direction:column;gap:48px}
+  .panel.active{display:flex}
+
+  /* ---- Explore panel ---- */
+  .hero{padding-top:56px;max-width:640px;display:flex;flex-direction:column;gap:20px}
+  @media (min-width:768px){ .hero{padding-top:96px} }
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .badge{display:inline-flex;align-items:center;gap:10px;padding:7px 16px;border-radius:9999px;align-self:flex-start}
+  .avatar-stack{display:flex}
+  .avatar-stack span{height:22px;width:22px;border-radius:9999px;border:2px solid rgba(255,255,255,.2);
+    margin-left:-8px;display:flex;align-items:center;justify-content:center}
+  .avatar-stack span:first-child{margin-left:0}
+  .badge .label{font-size:13px;font-weight:300;color:rgba(255,255,255,.8)}
+
+  h1.hero-title{font-size:2.25rem;font-weight:800;line-height:1.08;letter-spacing:-.03em}
+  @media (min-width:640px){ h1.hero-title{font-size:3rem} }
+  @media (min-width:1024px){ h1.hero-title{font-size:3.75rem} }
+  .hero p.sub{font-size:16px;line-height:1.65;color:var(--text-body);max-width:56ch}
+
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:4px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:14px 26px;border-radius:9999px;
+    font-size:15px;font-weight:700;transition:transform 200ms,filter 200ms,background 200ms}
+  .btn-primary{background:var(--emerald-600);color:#fff;box-shadow:0 10px 20px -6px rgba(5,150,105,.4)}
+  .btn-primary:hover{filter:brightness(1.1);transform:scale(1.02)}
+  .btn-primary:active{transform:scale(.96)}
+  .btn-ghost{color:#fff}
+  .btn-ghost:hover{background:rgba(255,255,255,.1)}
+
+  h2.section-title{font-size:1.4rem;font-weight:800;letter-spacing:-.02em}
+  p.section-sub{font-size:14px;color:var(--text-muted);margin-top:4px}
+
+  .pathways{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  @media (max-width:900px){ .pathways{grid-template-columns:1fr 1fr} }
+  @media (max-width:560px){ .pathways{grid-template-columns:1fr} }
+  .pcard{border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:14px;min-height:190px;
+    transition:transform 250ms,border-color 250ms}
+  .pcard.live{cursor:pointer}
+  .pcard.live:hover{transform:translateY(-3px);border-color:var(--tone)}
+  .pcard.preview{opacity:.55;cursor:default}
+  .ptile{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:21px;background:var(--tone-soft)}
+  .pcard h3{font-size:16px;font-weight:800}
+  .pcard p{font-size:12.5px;line-height:1.6;color:var(--text-muted)}
+  .paction{margin-top:auto;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;color:var(--tone)}
+  .soon-chip{align-self:flex-start;font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;padding:3px 9px;border-radius:9999px;background:rgba(255,255,255,.08);color:var(--text-muted)}
+
+  .featured{border-radius:22px;padding:28px;display:flex;align-items:center;justify-content:space-between;gap:24px;
+    background:linear-gradient(90deg,rgba(16,185,129,.14),rgba(20,184,166,.06),rgba(14,165,233,.12));
+    border:1px solid var(--border-accent)}
+  .featured-copy{display:flex;flex-direction:column;gap:8px;max-width:600px}
+  .featured h3{font-size:20px;font-weight:800}
+  .featured p{font-size:13.5px;line-height:1.6;color:var(--text-body)}
+  @media (max-width:700px){ .featured{flex-direction:column;align-items:flex-start} }
+
+  /* ---- Lessons panel ---- */
+  .lesson-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:700px){ .lesson-grid{grid-template-columns:1fr} }
+  .lesson-card{display:flex;gap:14px;padding:18px 20px;border-radius:16px;text-align:left;width:100%;
+    transition:border-color 250ms,transform 250ms}
+  .lesson-card:hover{border-color:var(--border-accent);transform:translateY(-2px)}
+  .lesson-num{flex:none;font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent-quiet);
+    font-variant-numeric:tabular-nums;padding-top:2px}
+  .lesson-body{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .lesson-body h3{font-size:14px;font-weight:800;line-height:1.4}
+  .lesson-body p{font-size:12px;line-height:1.6;color:var(--text-muted)}
+  .badge-chip{align-self:flex-start;margin-top:2px;padding:3px 9px;border-radius:9999px;
+    background:rgba(16,185,129,.12);color:var(--accent-quiet);border:1px solid var(--border-accent);
+    font-family:var(--font-mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+
+  /* ---------- Lesson reader dialog ---------- */
+  dialog.reader{width:min(880px,94vw);max-height:88vh;padding:0;border:none;border-radius:22px;
+    background:#0b1c17;color:#fff;box-shadow:0 25px 60px -12px rgba(0,0,0,.6);overflow:hidden}
+  dialog.reader::backdrop{background:rgba(2,6,23,.7);backdrop-filter:blur(3px)}
+  .reader-inner{display:flex;flex-direction:column;max-height:88vh}
+  .reader-head{flex:none;display:flex;align-items:flex-start;gap:16px;padding:24px 28px 18px;
+    border-bottom:1px solid var(--border-soft)}
+  .reader-head .grow{display:flex;flex-direction:column;gap:8px;min-width:0}
+  .reader-head h2{font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1.3}
+  .close-btn{flex:none;width:36px;height:36px;border-radius:12px;background:rgba(255,255,255,.06);
+    border:1px solid var(--border-soft);color:var(--text-muted);font-size:18px;line-height:1;
+    transition:background 200ms,color 200ms}
+  .close-btn:hover{background:rgba(16,185,129,.15);color:var(--accent-quiet)}
+  .modes{display:inline-flex;gap:4px;padding:4px;border-radius:12px;background:rgba(255,255,255,.05);
+    border:1px solid var(--border-soft);align-self:flex-start}
+  .mode{padding:6px 14px;border-radius:9px;font-size:12px;font-weight:700;color:var(--text-muted);
+    transition:background 200ms,color 200ms}
+  .mode[aria-pressed="true"]{background:var(--emerald-600);color:#fff}
+  .reader-body{overflow-y:auto;padding:24px 28px 32px;display:flex;flex-direction:column;gap:24px}
+  .prose{font-size:14px;line-height:1.75;color:var(--text-body);max-width:68ch}
+  .prose h3{margin:22px 0 8px;font-size:17px;font-weight:800;color:#fff;letter-spacing:-.01em}
+  .prose h4{margin:18px 0 6px;font-size:14px;font-weight:800;color:#fff}
+  .prose p{margin:0 0 12px}
+  .prose ul,.prose ol{margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:6px}
+  .prose strong{color:#fff;font-weight:700}
+  .prose code{font-family:var(--font-mono);font-size:12px;padding:2px 5px;border-radius:5px;
+    background:rgba(16,185,129,.12);color:var(--accent-quiet)}
+  .prose hr{border:none;border-top:1px solid var(--border-soft);margin:20px 0}
+  .prose a{color:var(--accent-quiet);text-underline-offset:2px}
+  .table-scroll{overflow-x:auto;margin:0 0 14px}
+  .prose table{border-collapse:collapse;width:100%;font-size:13px}
+  .prose th,.prose td{border:1px solid var(--border-soft);padding:8px 10px;text-align:left;vertical-align:top}
+  .prose th{background:rgba(16,185,129,.1);color:#fff;font-weight:700}
+  .panel-box{border:1px solid var(--border-soft);border-radius:16px;background:rgba(255,255,255,.03);
+    padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+  .panel-box>h3{font-size:13px;color:var(--accent-quiet)}
+  .takeaways{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px;
+    line-height:1.65;color:var(--text-body)}
+  .q{display:flex;flex-direction:column;gap:10px;padding-bottom:18px;border-bottom:1px solid var(--border-soft)}
+  .q:last-of-type{border-bottom:none;padding-bottom:0}
+  .q-text{font-size:14px;font-weight:700;color:#fff;line-height:1.5}
+  .opts{display:flex;flex-direction:column;gap:8px}
+  .opt{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-radius:12px;
+    border:1px solid var(--border-soft);background:rgba(255,255,255,.03);font-size:13px;line-height:1.5;
+    color:var(--text-body);text-align:left;transition:border-color 180ms,background 180ms}
+  .opt:hover:not(:disabled){border-color:var(--emerald-400);background:rgba(16,185,129,.08)}
+  .opt:disabled{cursor:default}
+  .opt .key{flex:none;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text-muted);padding-top:1px}
+  .opt.correct{border-color:var(--emerald-500);background:rgba(16,185,129,.12);color:#fff;font-weight:600}
+  .opt.correct .key{color:var(--accent-quiet)}
+  .opt.wrong{border-color:#f43f5e;background:rgba(244,63,94,.1);color:#fff}
+  .opt.wrong .key{color:#fb7185}
+  .explain{font-size:12.5px;line-height:1.65;padding:11px 14px;border-radius:12px;
+    background:rgba(255,255,255,.04);border:1px solid var(--border-soft)}
+  .explain.ok{background:rgba(16,185,129,.1);border-color:var(--border-accent)}
+  .explain.no{background:rgba(244,63,94,.08);border-color:rgba(244,63,94,.3)}
+  .explain b{font-weight:800;color:#fff}
+  .score{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent-quiet)}
+  .res{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;
+    border-radius:12px;border:1px solid var(--border-soft);background:rgba(255,255,255,.03);
+    font-size:13px;color:#fff;transition:border-color 180ms,background 180ms}
+  .res:hover{border-color:var(--emerald-400);background:rgba(16,185,129,.08)}
+  .res .meta{font-size:11px;color:var(--text-muted)}
+
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  }
+</style>
+
+<div class="backdrop-fixed">
+  <div class="bloom bloom-a"></div>
+  <div class="bloom bloom-b"></div>
+</div>
+
+
+<div class="page">
+  <nav class="nav">
+    <a href="#" class="logo" onclick="event.preventDefault()">
+      <span class="logo-tile">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+          <rect x="4" y="4" width="16" height="16" rx="6" transform="rotate(45 12 12)"></rect>
+        </svg>
+      </span>
+      <span class="logo-word">BioMed Explorer</span>
+    </a>
+
+    <ul class="tab-pill liquid-glass">
+      <li><button class="tab-btn active" data-tab="explore">Explore</button></li>
+      <li><button class="tab-btn" data-tab="lessons">Lessons</button></li>
+    </ul>
+
+    <div class="nav-right">
+      <button class="icon-btn liquid-glass" aria-label="Account">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"></path></svg>
+      </button>
+    </div>
+
+    <button class="hamburger liquid-glass" id="menuBtn" aria-label="Open menu" aria-expanded="false" style="display:none">
+      <span class="ico" id="iconMenu"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></span>
+      <span class="ico hide" id="iconX"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg></span>
+    </button>
+  </nav>
+
+  <div class="panels">
+    <!-- ============ Explore panel ============ -->
+    <section class="panel active" id="panel-explore">
+      <div class="hero">
+        <span class="badge liquid-glass">
+          <span class="avatar-stack" aria-hidden="true">
+            <span style="background:#059669"><svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg></span>
+            <span style="background:#0284c7"><svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg></span>
+            <span style="background:#0d9488"><svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg></span>
+            <span style="background:#9333ea"><svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"/></svg></span>
+          </span>
+          <span class="label">trusted by biomedical learners everywhere</span>
+        </span>
+
+        <h1 class="hero-title">Every Medicine Has a Story</h1>
+        <p class="sub">Discover the science happening inside your body through interactive learning — real lessons, real quizzes, no fluff.</p>
+
+        <div class="cta-row">
+          <button class="btn btn-primary" data-goto-lessons>▶ Start Exploring</button>
+          <button class="btn btn-ghost liquid-glass" data-goto-lessons>Continue Learning →</button>
+        </div>
+      </div>
+
+      <div class="hero-stage" id="heroStage">
+        <canvas id="scene" aria-hidden="true"></canvas>
+        <div class="hint" id="hint">Drag to orbit · scroll to zoom</div>
+      </div>
+
+      <section>
+        <h2 class="section-title">Primary Learning Pathways</h2>
+        <p class="section-sub">Select your preferred learning mode to explore biomedical topics.</p>
+        <div class="pathways" style="margin-top:16px">
+          <button class="pcard glass-card live" style="--tone:#34d399;--tone-soft:rgba(16,185,129,.12)" data-goto-lessons>
+            <span class="ptile">📚</span>
+            <h3>Learn</h3>
+            <p>Interactive lessons &amp; guided biomedical learning paths</p>
+            <span class="paction">Start Lessons <span aria-hidden="true">›</span></span>
+          </button>
+          <div class="pcard preview glass-card" style="--tone:#38bdf8;--tone-soft:rgba(56,189,248,.12)">
+            <span class="soon-chip">Not in this preview</span>
+            <span class="ptile">💊</span>
+            <h3>Medicines</h3>
+            <p>Explore drug mechanisms, ADME &amp; formulations</p>
+          </div>
+          <div class="pcard preview glass-card" style="--tone:#c084fc;--tone-soft:rgba(192,132,252,.12)">
+            <span class="soon-chip">Not in this preview</span>
+            <span class="ptile">🎮</span>
+            <h3>Mini Games</h3>
+            <p>Clinical cases, diagnostic simulations &amp; quizzes</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="featured glass-card">
+        <div class="featured-copy">
+          <span class="badge-chip" style="align-self:flex-start">Featured Recommendation</span>
+          <h3 style="margin-top:8px">What is a Drug? Defining Drugs, Poisons, and Everything In-Between</h3>
+          <p>Learn what defines a drug, explore the fine line between therapeutic agents and poisons, and discover how chemical compounds are classified.</p>
+        </div>
+        <button class="btn btn-primary" data-open-lesson="0">Continue Lesson →</button>
+      </section>
+    </section>
+
+    <!-- ============ Lessons panel ============ -->
+    <section class="panel" id="panel-lessons">
+      <div style="padding-top:40px">
+        <h2 class="section-title" style="font-size:1.8rem">Lesson Library</h2>
+        <p class="section-sub">Ten lessons, in curriculum order. Each one completed earns its badge.</p>
+      </div>
+      <div class="lesson-grid" id="lessonGrid"></div>
+    </section>
+  </div>
+
+</div>
+
+<div class="mobile-menu" id="mobileMenu">
+  <button data-tab="explore" data-close-menu>Explore</button>
+  <button data-tab="lessons" data-close-menu>Lessons</button>
+  <span class="liquid-glass" style="height:40px;width:40px;border-radius:9999px;display:flex;align-items:center;justify-content:center;margin-top:8px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6"></path></svg>
+  </span>
+</div>
+
+<dialog class="reader" id="reader" aria-labelledby="reader-title">
+  <div class="reader-inner">
+    <div class="reader-head">
+      <div class="grow">
+        <span class="badge-chip" id="reader-badge"></span>
+        <h2 id="reader-title"></h2>
+        <div class="modes" role="group" aria-label="Reading level">
+          <button class="mode" type="button" data-mode="explorer" aria-pressed="true">Explorer</button>
+          <button class="mode" type="button" data-mode="advanced" aria-pressed="false">Advanced</button>
+        </div>
+      </div>
+      <button class="close-btn" type="button" id="reader-close" aria-label="Close lesson">&times;</button>
+    </div>
+    <div class="reader-body">
+      <div class="prose" id="reader-prose"></div>
+      <div class="panel-box">
+        <h3 class="eyebrow">Key takeaways</h3>
+        <ul class="takeaways" id="reader-takeaways"></ul>
+      </div>
+      <div class="panel-box">
+        <h3 class="eyebrow">Check yourself <span class="score" id="reader-score"></span></h3>
+        <div id="reader-quiz" style="display:flex;flex-direction:column;gap:18px"></div>
+      </div>
+      <div class="panel-box">
+        <h3 class="eyebrow">Go deeper</h3>
+        <div id="reader-res" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script id="lesson-data" type="application/json">[{"id": "what-is-a-drug", "title": "💊 What is a Drug? Defining Drugs, Poisons, and Everything In-Between", "summary": "Learn what defines a drug, explore the fine line between therapeutic agents and poisons, and discover how chemical compounds are classified.", "badgeName": "Dose Detective", "explorerContent": "\n### 🧪 What is a Drug?\nA **drug** is any substance you put into your body that changes how your body works.\n* 🧬 **Endogenous substances**: Things your body naturally makes on its own (like **insulin** produced by your pancreas, or adrenaline from your adrenal glands).\n* 🧪 **Exogenous substances**: Things that come from outside your body (like aspirin, caffeine, or penicillin).\n\n---\n\n### ⚖️ The Two Pillars of Pharmacology\nPharmacology is built on two simple questions:\n1. **Pharmacokinetics (PK)**: *What the body does to the drug.* This tracks the drug's four-step journey in your body, known as **ADME** (Absorption, Distribution, Metabolism, and Excretion).\n2. **Pharmacodynamics (PD)**: *What the drug does to the body.* This studies how the drug works on your cells—for example, binding to an enzyme (a protein helper) on a cell's surface and stopping it from working.\n\n---\n\n### 🏭 Three Types of Drugs\n1. 🌿 **Natural Drugs**: Extracted from nature, like plants or molds (e.g., morphine from poppy plants, penicillin from mold).\n2. 🥼 **Synthetic Drugs**: Man-made by chemists in a lab (e.g., aspirin, designed to improve on a natural ingredient from willow bark).\n3. 🧫 **Biologics**: Extremely large, complex protein molecules grown in living systems like cells using **recombinant DNA technology** (e.g., human insulin).\n\n---\n\n### ⚖️ The Poison Principle: Dose Makes the Poison\nEvery drug can be a cure or a poison—it all depends on the **dose** (how much you take).\nThe famous Renaissance physician **Paracelsus** said: *\"Solely the dose determines that a thing is not a poison.\"*\n* 📉 **Too little**: No effect at all.\n* 📈 **Just right**: Heals your body (this is the safe \"therapeutic window\").\n* 🛑 **Too much**: Harms your body. For example, a normal dose of acetaminophen (Tylenol) relieves a headache, but taking too much can severely damage your liver.\n\n---\n\n### 🏷️ Drug Classification\nWe group drugs together by what they do (like lowering blood pressure), their chemical structure, or their legal status (like prescription vs. over-the-counter).\n", "advancedContent": "\n### 🧪 Defining a \"Drug\"\n\nAt the molecular level, a **drug** is a chemical ligand (typically a low-molecular-weight organic compound, though increasingly macromolecular) that interacts with specific biological target macromolecules, thereby altering homeostatic physiological pathways. In clinical pharmacology, exogenous compounds are referred to as **xenobiotics**.\n\nTo achieve systemic therapeutic effects, small-molecule drugs must meet physical-chemical criteria, often summarized by **Lipinski's Rule of 5** (molecular weight \u003c 500 Da, logP \u003c 5, hydrogen bond donors \u003c 5, hydrogen bond acceptors \u003c 10), which predict membrane permeability and aqueous solubility.\n\n### 🏭 Natural, Synthetic, and Biologics\n\nClassifying therapeutic agents by origin has significant structural and pharmacokinetic implications:\n1. 🌿 **Natural Drugs**: Complex secondary metabolites (e.g., alkaloids like morphine, glycosides). Their synthesis often features complex stereocenters, making total synthesis commercially non-viable; they are typically sourced via extraction or semi-synthesis.\n2. 🥼 **Synthetic Drugs**: Highly optimized small molecules created via Structure-Activity Relationship (SAR) design. Unlike natural products, synthetic drugs are refined to minimize off-target interactions and optimize metabolic stability (e.g., introducing fluorine atoms to prevent rapid oxidation by cytochrome P450).\n3. 🧫 **Biologics**: Recombinant proteins, monoclonal antibodies, or nucleic acids expressed in living host systems (such as CHO cells). Unlike small molecules, biologics are massive (>10,000 Da), immunogenic, require parenteral administration, and undergo complex **post-translational modifications** (like glycosylation) critical for efficacy and half-life.\n\n### ⚖️ Drugs and Poisons: \"The Dose Makes the Poison\"\n\nEvery drug is a potential poison; the distinction lies in the quantitative relationship of dose and receptor occupancy:\n\n$$Occupancy = \\frac{[L]}{[L] + K_d}$$\n\nWithin the **therapeutic window**, receptor occupancy triggers safe and beneficial physiological changes. Beyond this window, excess drug saturates primary targets and binds to low-affinity off-target receptors, driving toxicity.\n\nFor example, therapeutic doses of acetaminophen undergo safe Phase II conjugation. Toxic doses saturate these pathways, forcing metabolism through CYP2E1 to form the highly reactive toxic electrophile **NAPQI**, leading to cell death.\n\n### 🏷️ Classifying Drugs\n\nAdvanced pharmacology structures drug classification into robust hierarchical frameworks:\n1. 🎯 **ATC (Anatomical Therapeutic Chemical Classification)**: Controlled by the WHO, dividing drugs into five levels based on target organ, therapeutic intent, and chemical characteristics.\n2. 🔬 **Chemical & Stereoisomeric Classes**: Grouping by shared pharmacophores (e.g., dihydropyridines vs. non-dihydropyridines). Crucially, drugs are classified by stereochemistry; enantiomers often display distinct pharmacodynamic profiles (e.g., (S)-ibuprofen is an active COX inhibitor, whereas (R)-ibuprofen is inactive but undergoes chiral inversion in vivo).\n3. 🏛️ **Regulatory & Schedule Categories**: Legal frameworks classifying drugs based on abuse potential, dependence liability, and accepted medical use (e.g., Schedules I through V in the US Controlled Substances Act).\n", "content": "\n### 🧪 Defining a \"Drug\"\n\nA **drug** (or *xenobiotic* when it originates from outside the body) is any substance that, when introduced into a living organism, modifies its physiological or biochemical functions.\n\n![Traditional Apothecary & Natural Formulations](https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=600&q=80)\n\nActive chemicals fall into two categories:\n* 🧬 **Endogenous substances**: Molecules synthesized naturally within the body (e.g., adrenaline, insulin).\n* 🧪 **Exogenous substances**: Molecules introduced from the external environment (e.g., aspirin, caffeine). These are the drugs we study.\n\n### 🏭 Natural, Synthetic, and Biologic Drugs\n\nDrugs are grouped into three primary classes based on their origin:\n1. 🌿 **Natural Drugs**: Sourced directly from plants, animals, or microorganisms (e.g., morphine from poppies, penicillin from mold).\n2. 🥼 **Synthetic Drugs**: Created from scratch in chemical laboratories (e.g., aspirin, designed to improve upon natural willow bark extract).\n3. 🧫 **Biologics**: Large molecules manufactured in living systems using recombinant DNA technology (e.g., monoclonal antibodies, insulin analogs).\n\n### ⚖️ Drugs and Poisons: \"The Dose Makes the Poison\"\n\n![Dose-Response Relationship & Therapeutic Window](https://images.unsplash.com/photo-1576086213369-97a306d36557?auto=format&fit=crop&w=600&q=80)\n\nParacelsus famously declared: *\"All things are poison and nothing is without poison; only the dose makes a thing not a poison.\"*\n\nThis is mapped using the **dose-response relationship**:\n* 📉 **Sub-therapeutic Dose**: Concentrations are too low to produce a noticeable effect.\n* 📈 **Therapeutic Dose**: Achieves the desired effect while keeping side effects within acceptable limits.\n* 🛑 **Toxic Dose**: High enough to impair normal functions, causing injury or death.\n\nFor example, acetaminophen is safe at 500 mg, but an overdose depletes liver antioxidants, causing severe liver necrosis.\n\n### How Drugs are Classified\n\n1. 🎯 **By Therapeutic Effect**: Based on clinical use (e.g., *antihypertensives* lower blood pressure).\n2. 🔬 **By Chemical Structure**: Drugs sharing a similar molecular core (e.g., *beta-lactam* antibiotics).\n3. 🏛 **By Regulatory Status**: Divided into prescription-only, over-the-counter (OTC), or scheduled controlled substances.\n", "keyTakeaways": ["A drug is any exogenous chemical substance that alters biological function when introduced into an organism.", "The line between a drug and a poison is determined by the dose-response relationship, as summarized by Paracelsus.", "Drugs are classified by origin into natural, synthetic, and biologics, each with distinct manufacturing pathways.", "Classification systems organize drugs by clinical/therapeutic effect, chemical structure, or regulatory status."], "quiz": [{"text": "Which of the following is an example of an endogenous substance?", "options": ["Aspirin", "Insulin naturally produced by the pancreas", "Caffeine from coffee beans", "Penicillin produced by mold"], "correctAnswerIndex": 1, "explanation": "Endogenous substances are molecules synthesized naturally within the body, such as hormones, neurotransmitters, and autacoids."}, {"text": "Who famously stated that \"solely the dose determines that a thing is not a poison\"?", "options": ["Alexander Fleming", "Paracelsus", "Hippocrates", "Louis Pasteur"], "correctAnswerIndex": 1, "explanation": "The Renaissance physician Paracelsus established the foundational toxicological concept that dose determines toxicity."}, {"text": "How do biologic drugs fundamentally differ from traditional synthetic drugs?", "options": ["They are simple small molecules made by chemical synthesis", "They are large, complex proteins manufactured in living cells using recombinant DNA technology", "They can only be applied topically", "They never have any side effects"], "correctAnswerIndex": 1, "explanation": "Biologics are large, complex proteins or nucleic acids produced using biological expression systems rather than chemical synthesis."}], "resources": [{"title": "What is Pharmacology?", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+what+is+pharmacology", "duration": "Various"}, {"title": "Introduction to Pharmacology", "channel": "Khan Academy", "url": "https://www.youtube.com/results?search_query=khan+academy+introduction+to+pharmacology", "duration": "Various"}]}, {"id": "human-cell-basics", "title": "The Human Cell: The Target Environment", "summary": "Understand the cellular landscape where drugs act, exploring membrane permeability, membrane proteins, and intracellular targets.", "badgeName": "Cell Scholar", "explorerContent": "\n### 🛡️ Cells are Tiny Castles\nOur bodies are made of trillions of tiny building blocks called **cells**, which act like small castles. For drugs to work, they usually must find these cells.\n\n---\n\n### 🚪 The Castle Wall: The Cell Membrane\nEvery cell has a protective outer wall called the **cell membrane** (made of a double layer of fats called the **phospholipid bilayer**).\n* 💧 **Fat-friendly wall**: This wall acts like grease, so only **fat-soluble (lipophilic) and uncharged** drugs can slide right through it like ghosts.\n* ❌ **Blocks water-soluble molecules**: Large or charged water-soluble substances (things that like water) get blocked at the gate.\n\n---\n\n### 🔑 Special Gates and Machinery\nThose water-soluble molecules that get blocked must rely on membrane protein helpers to interact with the cell:\n1. 🌉 **Ion Channels**: These act like gatekeepers at **gated tunnels (little doors)**. When the door opens, charged salts (ions like sodium or calcium) rush in or out.\n2. 🚂 **Transporter Proteins**: These act like little trains, actively carrying specific molecules across the wall.\n\n---\n\n### 🌀 Inside vs. Outside Cell Targets\nDrugs can find targets in two places:\n* 🌐 **Outside targets**: The drug does not need to enter the cell. It just rings the doorbell (binds to a receptor on the outer wall, like Beta receptors) to send a message inside.\n* 🌀 **Inside targets**: The drug must be fat-soluble to pass through the cell membrane and find a control panel inside (like glucocorticoid receptors). Protein drugs cannot do this because they cannot pass through the fat-friendly cell membrane.\n", "advancedContent": "\n### 🛡️ Compartmentalized Cellular Biochemistry\n\nCells represent highly compartmentalized biochemical microenvironments. For a drug to reach its target, it must traverse multiple lipid barriers (including the plasma membrane, nuclear envelope, or mitochondrial membranes), each posing unique biophysical obstacles.\n\n### 🚪 The Gatekeeper: The Phospholipid Bilayer\n\nCell membranes are semi-permeable barriers. Passive transcellular diffusion is governed by **Fick's Law of Diffusion**:\n\n$$Flux = \\frac{D \\cdot A \\cdot K \\cdot (C_{out} - C_{in})}{x}$$\n\nOnly non-ionized, lipophilic molecules cross the hydrophobic membrane core easily. Since most drugs are weak acids or weak bases, their ionization state depends on local pH and the drug's $pK_a$, calculated via the **Henderson-Hasselbalch equation**:\n* Weak Acid: $pH = pK_a + \\log\\frac{[A^-]}{[HA]}$\n* Weak Base: $pH = pK_a + \\log\\frac{[B]}{[BH^+]}$\n\nThus, weak acids (like aspirin) are non-ionized and highly absorbed in the acidic gastric environment (pH 1.5–2.0), while weak bases are ionized and trapped there.\n\n### 🔑 Membrane Proteins\n\nMembrane-bound proteins are core functional targets for molecular signaling and transport:\n1. 🛎️ **Receptors**: Transduce extracellular ligand binding into intracellular signaling cascades via conformational changes (e.g., GPCRs).\n2. 🌉 **Ion Channels**: Gated transmembrane pores regulating selective ionic permeability (e.g., L-type $Ca^{2+}$ channels targeted by diltiazem).\n3. 🚂 **Active Transporters**: Include Solute Carriers (SLC) and ATP-Binding Cassette (ABC) pumps (e.g., **P-glycoprotein**), which efflux drugs to mediate multidrug resistance.\n4. ⚙️ **Enzymes**: Localized or transmembrane catalysts driving biological reactions (e.g., cyclooxygenases).\n\n### 🧬 Intracellular vs. Extracellular Targets\n\nTarget compartmentalization is highly distinct:\n* 🌐 **Extracellular Targets**: Accessible without crossing membranes. Includes plasma enzymes (e.g., angiotensin-converting enzyme) or cell surface receptors.\n* 🌀 **Intracellular Targets**: Demand drugs with high lipophilicity or that act as substrates for import transporters. Examples include cytosolic enzymes (e.g., dihydrofolate reductase) or intracellular nuclear receptors (e.g., mineralocorticoid receptors). Once lipophilic drugs cross the lipid bilayer, they bind these targets to modulate transcription or metabolism.\n", "content": "\n### 🛡️ The Cellular Battlefield\n\nCells are the microscopic units of life. Almost all drugs must navigate to and interact with molecules on the surface of or inside these cells.\n\n![Intricate Cellular Microscopic Structure](https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=600&q=80)\n\n### 🚪 The Gatekeeper: The Phospholipid Bilayer\n\nEvery cell is surrounded by a fluid **cell membrane** (phospholipid bilayer):\n* 🔗 **Structure**: Composed of double-layered phospholipids, with hydrophilic (water-loving) heads facing outward and lipophilic (fat-loving) fatty acid tails facing inward.\n* 💧 **Lipid Barrier**: Highly selective. Tiny, uncharged, fat-soluble (lipophilic) drugs cross easily; large, polar, or charged water-soluble (hydrophilic) molecules cannot pass freely.\n\n![Visualizing Cell Boundary Lipids & Transporters](https://images.unsplash.com/photo-1530026405186-ed1ea0ac7a63?auto=format&fit=crop&w=600&q=80)\n\n### 🔑 The Role of Membrane Proteins\n\nEmbedded proteins act as cell portals and eyes, serving as primary targets for over 70% of drugs:\n1. 🛎️ **Receptors**: Receive chemical signals and trigger intracellular responses without the drug entering the cell.\n2. 🌉 **Ion Channels**: Gated pathways regulating the flux of specific ions (Na+, K+, Ca2+).\n3. 🚂 **Transporters**: Active pumps or carriers escorting polar molecules across the membrane.\n4. ⚙️ **Enzymes**: Catalysts that speed up biochemical reactions (e.g., acetylcholinesterase).\n\n### 🧬 Intracellular vs. Extracellular Targets\n\nDrug targets are classified by their cellular location:\n* 🌐 **Extracellular Targets**: Located on the outer membrane (e.g., Beta-blockers) or free in plasma (e.g., ACE inhibitors).\n* 🌀 **Intracellular Targets**: Require drugs to cross the membrane (demanding high lipid solubility) to bind (e.g., glucocorticoids binding to intracellular receptors).\n", "keyTakeaways": ["The cell membrane is a semi-permeable phospholipid bilayer with a hydrophobic fatty core.", "Fat-soluble (lipophilic) drugs can pass directly through the cell membrane, while water-soluble drugs need transporters or surface receptors.", "Receptors, ion channels, transporters, and enzymes are the four main types of cellular proteins targeted by drugs.", "Drug targets can be extracellular (on the outer membrane or in blood) or intracellular (in cytoplasm or nucleus)."], "quiz": [{"text": "What characteristics must a drug possess to passively diffuse directly through the cell membrane's lipid bilayer?", "options": ["Highly charged and water-soluble", "Large molecular weight", "Lipophilic (fat-soluble) and non-ionized", "Composed of complex biologic proteins"], "correctAnswerIndex": 2, "explanation": "The hydrophobic core of the cell membrane only allows small, lipophilic (fat-soluble), and neutral molecules to diffuse through easily."}, {"text": "Which type of cellular protein acts as a gated tunnel, allowing ions to flow rapidly down their electrochemical gradient?", "options": ["Nuclear receptors", "Ion channels", "Phospholipid bilayer", "Active transporter pumps"], "correctAnswerIndex": 1, "explanation": "Ion channels are gated membrane proteins that, when opened, allow specific ions to move rapidly and passively down their gradient."}, {"text": "Why can glucocorticoids bind to intracellular nuclear receptors, while most peptide (protein) drugs cannot?", "options": ["Glucocorticoids are large, charged proteins", "Glucocorticoids are lipophilic steroids that easily cross the cell membrane", "Intracellular receptors are actually located on the outside of the cell", "Peptide drugs are too small to be noticed"], "correctAnswerIndex": 1, "explanation": "Glucocorticoids are highly lipophilic steroid hormones that easily cross the membrane barrier to find intracellular receptors, unlike large hydrophilic peptide molecules."}], "resources": [{"title": "Cell Membrane Structure & Function", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+cell+membrane+structure+function", "duration": "Various"}, {"title": "Drug Targets: Receptors, Enzymes, and Channels", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+drug+targets", "duration": "Various"}]}, {"id": "drug-development", "title": "How a Drug is Born: From Lab Bench to Pharmacy Shelf", "summary": "Discover the rigorous, multi-year process of bringing a new drug to market, exploring preclinical testing, clinical trials, and regulation.", "badgeName": "Trial Tracker", "explorerContent": "\n### 🧪 How are Drugs Made?\nDeveloping a new medicine is a long marathon. It usually takes 10 to 15 years and costs billions of dollars!\n\n---\n\n### 🔬 The 5 Stages of Making a Drug\n\n1. **Finding a Target**: Scientists find a key \"bad guy\" causing a disease (like a hyperactive protein).\n2. **Preclinical Testing (Lab & Animals)**: Tested in labs on cells (in vitro) and animals (in vivo) to make sure the drug is safe, non-toxic, and to estimate a safe starting dose.\n3. **Human Clinical Trials**: The most critical step, split into three phases:\n   * **Phase I**: Tested on a tiny group (20-100) of **healthy volunteers**. Looks at safety and how the human body processes the drug.\n   * **Phase II**: Tested on 100-500 **actual patients** to see if the drug works and find the best dose.\n   * **Phase III**: Tested on thousands of patients (1,000-5,000+) to confirm safety and effectiveness on a massive scale.\n4. **Approval**: Sending all test data to government regulators (like the FDA) for approval.\n5. **Phase IV (Post-Market Monitoring)**: Once the drug is on shelves, it is taken by millions. Regulators track it to catch **extremely rare or long-term side effects** that only show up in massive populations.\n\n---\n\n### ⚖️ The Gold Standard: Placebos and Double-Blind Trials\nTo prove a drug really works and isn't just a mental trick, scientists use:\n* **Placebo**: A fake pill (like a sugar pill) that looks identical to the real medicine.\n* **Double-Blind Trial**: **Neither the patients nor the doctors/researchers** know who is taking the real drug and who is taking the fake placebo. This keeps the test completely objective!\n", "advancedContent": "\n### Preclinical Toxicology and Regulatory Gateways\n\nTranslating a preclinical compound into an approved pharmaceutical is governed by strict regulatory science:\n* **IND (Investigational New Drug)**: Filed after preclinical testing to request permission to begin human clinical trials.\n* **NDA (New Drug Application)**: Submitted after Phase III, containing all manufacturing, safety, and efficacy data.\n\n#### Preclinical Toxicology Endpoints\nPreclinical studies establish key safety parameters before human exposure:\n* **$LD_{50}$ (Median Lethal Dose)**: The dose that causes death in 50% of animal test subjects.\n* **$TD_{50}$ (Median Toxic Dose)**: The dose that produces a specific toxic effect in 50% of subjects.\n* **NOAEL (No Observed Adverse Effect Level)**: The highest dose that does not produce a statistically significant increase in adverse effects compared to control. This is used to calculate the Maximum Recommended Starting Dose (MRSD) for Phase I trials (typically 1/10th of the animal equivalent dose).\n\n#### Clinical Trial Statistical Design & Endpoints\n* **Statistical Power**: Ensuring sample size is sufficient (typically power $\\beta \\ge 0.80$) to detect a significant difference between intervention and control arms, rejecting the null hypothesis ($p \u003c 0.05$).\n* **Endpoints**: Trials distinguish between **clinical endpoints** (e.g., survival, symptoms) and **surrogate endpoints** (e.g., blood pressure reduction, cholesterol lowering).\n* **Phase IV Pharmacovigilance**: Focused on identifying extremely rare adverse events (such as Stevens-Johnson Syndrome) occurring at rates of 1 in 10,000 or lower, which require massive real-world databases (like FDA MedWatch) to detect.\n", "content": "\n### The Drug Development Pipeline\n\nThe journey of a drug is a highly structured, regulated process divided into five primary stages:\n\n#### 1. Discovery and Target Validation\nIdentifying a biological target (e.g., an overactive enzyme) causing a disease. Compounds are screened to find a \"lead\" molecule that binds to this target.\n\n#### 2. Preclinical Testing\nBefore human testing, compounds are assessed in laboratories:\n* *In vitro* models (cell cultures).\n* *In vivo* models (animal testing).\n* Rules out severe toxicity and estimates safe initial human doses.\n\n#### 3. Clinical Trials (Human Testing)\nIf preclinical safety is established, human testing begins across three primary phases:\n\n| Phase | Subjects | Primary Focus | Population |\n| :--- | :--- | :--- | :--- |\n| **Phase I** | 20–100 | **Safety**, tolerability, pharmacokinetics | Healthy Volunteers |\n| **Phase II** | 100–500 | **Efficacy** and optimal dosing | Diseased Patients |\n| **Phase III** | 1,000–5,000+ | Large-scale safety and efficacy | Large Patient Cohorts |\n\n#### 4. Regulatory Review & Approval\nSponsors compile all data into a New Drug Application (NDA) and submit it to regulatory bodies (such as the FDA). Once approved, the drug can be marketed.\n\n#### 5. Phase IV (Post-Market Surveillance)\nMonitoring the drug in the general population to detect extremely rare side effects or long-term complications.\n\n### Placebos, Double-Blinding, and Efficacy\n\nTo prove a drug's true efficacy, clinical trials employ the gold standard: **placebo-controlled, double-blind randomized clinical trials**.\n* **Placebo**: An inactive substance (e.g., a sugar pill) used to measure the \"placebo effect\" (psychological improvement).\n* **Double-Blind**: Neither the **participants** nor the **researchers** know who is receiving the active drug or the placebo, eliminating expectation bias.\n", "keyTakeaways": ["Drug development is a structured, multi-year process moving from preclinical testing to human clinical trials.", "Clinical trials are divided into four phases: Phase I for safety, Phase II for efficacy/dosing, Phase III for large-scale confirmation, and Phase IV for post-market monitoring.", "Placebo-controlled, double-blind trials are the gold standard to eliminate subjective expectation bias.", "Regulatory agencies approve new drugs based on scientific evidence of safety and efficacy."], "quiz": [{"text": "In which phase of a clinical trial is a drug tested for the first time in a small group of healthy volunteers to assess safety and pharmacokinetics?", "options": ["Phase I", "Phase II", "Phase III", "Phase IV"], "correctAnswerIndex": 0, "explanation": "Phase I trials focus on testing safety, tolerability, and pharmacokinetics in small groups (20 to 100) of healthy volunteers."}, {"text": "What does \"double-blind\" mean in the context of clinical trials?", "options": ["The drug is tested on two different animal species", "The drug is administered twice daily to prevent vision loss", "Neither the study participants nor the researchers know who is receiving the drug or placebo", "Both doctors and patients are fully aware of which treatment group they are in"], "correctAnswerIndex": 2, "explanation": "Double-blind studies eliminate subjective expectations and bias by keeping both patients and researchers unaware of treatment assignments."}, {"text": "Why is Phase IV (post-market surveillance) necessary after a drug has already been approved?", "options": ["To determine the drug's initial retail price", "To detect extremely rare or long-term side effects in a massive, diverse population", "To repeat preclinical animal testing", "To recruit healthy volunteers for dosage tests"], "correctAnswerIndex": 1, "explanation": "Extremely rare side effects (e.g., 1 in 10,000) or long-term complications can only be identified after millions of diverse patients take the drug in real-world scenarios."}], "resources": [{"title": "The Drug Development Process", "channel": "FDA", "url": "https://www.youtube.com/results?search_query=fda+drug+development+process", "duration": "Various"}, {"title": "Clinical Trials Phases 1-4", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+clinical+trials+phases", "duration": "Various"}]}, {"id": "routes-of-administration", "title": "How Drugs Enter the Body: Routes of Administration", "summary": "Explore oral, sublingual, intravenous, subcutaneous, and inhaled administration. Understand how routes dictate speed and bioavailability.", "badgeName": "Route Navigator", "explorerContent": "\n### 🚀 How Medicines Travel\nThe path a drug takes into your body determines how fast it starts working, and how much of it actually reaches your bloodstream.\n\n---\n\n### 👄 Swallowed vs. Under the Tongue (Enteral)\n* **Oral (PO)**: Swallowing a pill. This is the most convenient, but the drug must face stomach acid, get absorbed by the intestine, and go straight to the **liver** first. The liver acts like a security guard, breaking down a large portion of the drug before it can reach the rest of your body. This is called the **first-pass effect**.\n* **Sublingual (SL)**: Putting a pill under your tongue (like **nitroglycerin** for chest pain). The area under your tongue has a rich blood supply, absorbing the drug directly into your bloodstream and **bypassing the liver's first-pass effect**. It works incredibly fast!\n\n---\n\n### 💉 Injecting Directly (Parenteral)\n* **Intravenous (IV)**: Injecting drug liquid straight into a vein. Because it skips absorption entirely, it provides **100% bioavailability (F = 1)** with **no delay**. It is the absolute fastest way to deliver drugs in an emergency! But once injected, it cannot be recalled.\n* **Subcutaneous (SC)**: Injecting into the fat layer under the skin (like **insulin glargine**). It acts like a slowly leaking pool, releasing medicine gradually and steadily, making it perfect for self-injections at home.\n\n---\n\n### 🌬️ Inhaling: Direct to the Lungs\n* **Inhaled**: Breathing in gas or powder (like the asthma drug **salbutamol**). It goes straight to your lungs, acting almost instantly exactly where it is needed, while keeping side effects in the rest of your body to a minimum.\n", "advancedContent": "\n### Quantitative Bioavailability and Absorption Kinetics\n\nFrom a kinetic perspective, the route of administration determines the mathematical properties of the plasma concentration-time curve ($C_p$ vs. $t$):\n\n* **Bioavailability ($F$)**：The fraction of an administered dose that reaches systemic circulation unchanged. It is calculated using the Area Under the Curve (AUC):\n\n$$F = \\frac{AUC_{oral} \\cdot Dose_{IV}}{AUC_{IV} \\cdot Dose_{oral}}$$\n\nFor IV administration, $F = 1.0$ (100%) by definition.\n\n#### Physiology of the First-Pass Effect\nOrally administered drugs absorbed from the gastrointestinal tract enter the mesenteric veins and must travel through the portal vein into the **hepatic portal system**. Hepatocytes are enriched with cytochrome P450 enzymes (especially CYP3A4) and conjugating enzymes. Drugs with a high hepatic extraction ratio ($E_H$) are heavily metabolized before entering systemic circulation, severely limiting bioavailability.\n\n#### Parenteral Depot and Barrier Kinetics\n* **Sublingual Administration**: Sublingual mucosal capillaries drain directly into the superior vena cava, allowing nitroglycerin to bypass the portal system and avoid first-pass hepatic clearance, achieving rapid therapeutic systemic concentrations.\n* **Subcutaneous Depots**: Subcutaneous fat injections (e.g., **insulin glargine**) exploit altered physical-chemical properties. Insulin glargine's isoelectric point is genetically engineered to pH 6.7. At physiological pH (7.4), it forms micro-precipitates that dissolve extremely slowly, providing a peakless, steady release of insulin.\n* **Inhalation Kinetics**: The alveolar-capillary membrane barrier is extremely thin (~0.2–0.5 $\\mu\\text{m}$) with a massive surface area. Gases or aerosols (like **salbutamol**) deposit directly on bronchial smooth muscle $\\beta_2$-adrenergic receptors, bypassing systemic distribution and off-target side effects.\n", "content": "\n### Selecting the Route of Administration\n\nThe choice of **route of administration** dictates how rapidly a drug acts, its systemic bioavailability, and patient compliance.\n\n### Enteral Routes (Through the Digestive Tract)\n\nThese routes involve the Gastrointestinal (GI) tract:\n* **Oral (PO)**: Swallowing tablets, capsules, or liquids.\n  * *Pros*: Convenient, painless, self-administered.\n  * *Cons*: Subject to stomach acid degradation and hepatic **first-pass metabolism**; slow, variable absorption.\n  * *Example*: Oral aspirin.\n* **Sublingual (SL)**: Dissolving under the tongue.\n  * *Pros*: Rapid absorption via sublingual capillaries, bypassing hepatic first-pass metabolism.\n  * *Cons*: Restricted to small, highly lipophilic drugs.\n  * *Example*: Sublingual **nitroglycerin** for angina.\n\n### Parenteral Routes (Injections)\n\nThese bypass the digestive tract entirely:\n* **Intravenous (IV)**: Direct injection into a vein.\n  * *Pros*: **100% bioavailability (F = 1)**, instantaneous onset, ideal for emergencies.\n  * *Cons*: Irreversible once administered, infection risks, requires professional administration.\n  * *Example*: IV furosemide in acute heart failure.\n* **Intramuscular (IM)**: Injection into deep muscle. Good for sustained-release depot formulations.\n* **Subcutaneous (SC)**: Injection into the fatty tissue layer under the skin. Slow, steady absorption, highly suitable for self-injection (e.g., **insulin glargine**).\n\n### Other Specialized Routes\n\n* **Inhaled**: Inhaling gases or aerosols (e.g., **salbutamol**). Extremely rapid onset, acting directly on pulmonary tissues while minimizing systemic side effects.\n* **Topical/Transdermal**: Ointments or patches. Transdermal patches bypass the liver, delivering a slow, continuous drug release over several days.\n", "keyTakeaways": ["The route of administration determines a drug's onset speed, bioavailability, and clinical utility.", "Oral administration is convenient but subject to stomach acid and hepatic first-pass metabolism.", "Intravenous (IV) injection provides 100% bioavailability (F = 1) with instant onset, bypasses absorption, and is irreversible.", "Sublingual, subcutaneous, and inhaled routes bypass first-pass metabolism to achieve rapid or specialized delivery."], "quiz": [{"text": "Which route of administration provides 100% bioavailability (F = 1) with no absorption delay?", "options": ["Oral", "Intravenous (IV)", "Sublingual", "Transdermal patch"], "correctAnswerIndex": 1, "explanation": "Intravenous injection introduces the drug directly into systemic circulation, completely bypassing the absorption phase, giving F = 1."}, {"text": "Why is nitroglycerin for chest pain taken sublingually (under the tongue) rather than swallowed?", "options": ["To prevent teeth from chemical staining", "To bypass the liver's first-pass effect and reach a rapid therapeutic blood concentration", "Because stomach acid would completely neutralize all nitrates", "To prevent the drug from entering the systemic circulation"], "correctAnswerIndex": 1, "explanation": "The sublingual mucosa has a rich blood supply that drains directly into systemic veins, bypassing the portal vein and liver's first-pass metabolism for rapid action."}, {"text": "Which of the following drugs is correctly paired with its typical clinical route of administration?", "options": ["Salbutamol (Albuterol) - Subcutaneous injection", "Insulin Glargine - Inhaled", "Salbutamol (Albuterol) - Inhaled", "Aspirin - Sublingual patch"], "correctAnswerIndex": 2, "explanation": "Salbutamol (albuterol) is typically inhaled to act directly on bronchial smooth muscle with minimal systemic side effects. Insulin glargine is administered as a subcutaneous injection for steady, slow absorption."}], "resources": [{"title": "Routes of Drug Administration", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+routes+of+drug+administration", "duration": "Various"}, {"title": "Bioavailability and First Pass Effect", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+bioavailability+first+pass+effect", "duration": "Various"}]}, {"id": "drug-safety-side-effects", "title": "Drug Safety & Side Effects: Why No Drug is Perfectly Safe", "summary": "Understand the differences between side effects, adverse drug reactions, and toxicity. Learn how to calculate the Therapeutic Index.", "badgeName": "Safety Guardian", "explorerContent": "\n### ⚠️ Every Drug has Two Faces\nNo drug acts on only one cell type. Every medicine has both helpful and unwanted effects, which we group into three classes:\n1. **Side Effects**: Predictable, mild, normal reactions to therapeutic doses (e.g., taking **salbutamol** to dilate your airways might make your hands shake slightly).\n2. **Adverse Reactions**: Unexpected, unwanted, and potentially harmful reactions (like a severe allergic reaction).\n3. **Toxicity**: Serious, dangerous harm caused by taking too much drug (overdose) or drug accumulating in the body.\n\n---\n\n### ⚖️ The Safety Score: Therapeutic Index (TI)\nWe measure a drug's safety using the **Therapeutic Index (TI)** formula:\n$$\\text{Therapeutic Index (TI)} = \\frac{\\text{Toxic Dose (TD50)}}{\\text{Effective Dose (ED50)}}$$\n* **Wide Therapeutic Index (High TI)**: Highly safe. **The toxic dose is many times higher than the effective dose**. For example, if the TI is 100, you would have to take 100 times the normal dose to experience toxicity (like penicillin).\n* **Narrow Therapeutic Index (NTI / Low TI)**: High risk! The safety margin is tiny. **Small changes in dosage or blood concentration can easily lead to therapeutic failure (too little drug) or severe toxicity (too much drug)**. Examples include digoxin, lithium, or high-dose **aspirin**.\n\n---\n\n### 🤝 When Medicines Clash: Drug Interactions\nIf you take two drugs together, they can interfere. \nFor example, if **Drug A blocks (inhibits) liver enzymes** (specifically **Cytochrome P450** enzymes) that are responsible for breaking down **Drug B**. Because the enzymes are blocked, **Drug B will accumulate in the blood, causing Drug B's concentrations to rise and potentially leading to dangerous toxicity!**\n", "advancedContent": "\n### Advanced Toxicology and Biochemical Interactions\n\n#### Classification of ADRs (Rawlins-Thompson Classification)\n* **Type A (Augmented)**: Common, predictable, dose-dependent, and an extension of the drug's primary pharmacology (e.g., bleeding with the anticoagulant warfarin, or dry mouth with anticholinergics).\n* **Type B (Bizarre)**: Rare, unpredictable, independent of dose, and mediated by immunological or genetic factors (e.g., penicillin anaphylaxis, or Stevens-Johnson syndrome from sulfonamides).\n\n#### The Therapeutic Window\nThe range of plasma drug concentrations that provides efficacy without unacceptable toxicity, bounded by:\n* **Minimum Effective Concentration (MEC)**: The lowest plasma level producing clinical benefit.\n* **Minimum Toxic Concentration (MTC)**: The threshold where toxic symptoms emerge.\n\n#### Molecular Mechanisms of CYP450 Interactions\nCytochrome P450 is the dominant Phase I oxidation enzyme superfamily:\n* **Reversible Inhibition**: Drug A competes with Drug B for the active heme-iron pocket of a CYP enzyme (e.g., ketoconazole inhibiting CYP3A4), prolonging Drug B's half-life.\n* **Irreversible/Suicide Inhibition**: Drug A is metabolized by a CYP enzyme to form a reactive radical that covalently binds and permanently inactivates the enzyme molecule (e.g., erythromycin).\n* **Enzyme Induction**: Drug A activates nuclear receptors (like PXR), upregulating the transcription and synthesis of new CYP450 enzymes. This takes days to develop, accelerating the clearance of co-administered Drug B below therapeutic levels.\n* **Acetaminophen Hepatotoxicity Mechanism**: Therapeutic doses undergo safe conjugation. Overdose saturates these pathways, forcing metabolism through CYP2E1 to generate the highly reactive toxic electrophile **NAPQI**. Once glutathione is depleted, NAPQI binds covalently to hepatic proteins, inducing mitochondrial dysfunction and necrosis.\n", "content": "\n### The Double-Edged Sword of Therapeutics\n\nIn clinical practice, no drug is perfectly selective. Unwanted consequences are classified into three distinct categories:\n\n1. **Side Effects**: Predictable, typically mild, dose-dependent, and transient reactions that accompany therapeutic doses. (e.g., salbutamol dilating airways but causing tremors).\n2. **Adverse Drug Reactions (ADRs)**: Harmful, unintended, and sometimes unpredictable reactions that occur at normal therapeutic doses.\n3. **Toxicity**: Severe, detrimental, and potentially life-threatening effects resulting from drug accumulation, overdosage, or impaired elimination.\n\n### Quantifying Safety: The Therapeutic Index\n\nWe evaluate a drug's safety margin using the **Therapeutic Index (TI)**, which compares the dose required for toxicity to the dose required for therapeutic benefit:\n\n$$\\text{Therapeutic Index (TI)} = \\frac{TD_{50}}{ED_{50}} \\quad \\text{or} \\quad \\frac{LD_{50}}{ED_{50}}$$\n\n* **$ED_{50}$ (Median Effective Dose)**: The dose that produces the desired therapeutic effect in 50% of the population.\n* **$TD_{50}$ (Median Toxic Dose)**: The dose that produces a specific toxic effect in 50% of the population.\n* **$LD_{50}$ (Median Lethal Dose)**: The dose that causes death in 50% of animal test subjects.\n\n#### Wide vs. Narrow Therapeutic Index\n* **Wide Therapeutic Index (High TI)**: Highly safe, with toxic doses far exceeding therapeutic doses (e.g., penicillin).\n* **Narrow Therapeutic Index (Low TI)**: Safety margin is incredibly narrow. Minute dosage or blood level changes easily trigger toxicity (e.g., high-dose **aspirin**, digoxin). Requires regular Therapeutic Drug Monitoring (TDM).\n\n### Metabolic Drug Interactions\n\nWhen two drugs are co-administered, they can interfere with liver metabolism, primarily via the **Cytochrome P450 (CYP450)** enzyme system:\n* **Enzyme Inhibition**: Drug A inhibits a CYP450 enzyme, slowing down the clearance of Drug B. Drug B accumulates in the bloodstream, triggering severe toxicity.\n* **Enzyme Induction**: Drug A induces a CYP450 enzyme, accelerating Drug B's clearance. Drug B's concentrations crash, causing therapeutic failure.\n", "keyTakeaways": ["No drug is perfectly selective; unintended effects are grouped into side effects, adverse drug reactions, and toxicity.", "The Therapeutic Index (TI = TD50 / ED50) quantifies safety. Narrow Therapeutic Index (NTI) drugs pose the highest clinical risk.", "NTI drugs require clinical Therapeutic Drug Monitoring (TDM) to prevent toxicity or therapeutic failure.", "Co-administered drugs often inhibit or induce liver CYP450 enzymes, acting as a primary cause of pharmacokinetic interactions."], "quiz": [{"text": "If a drug has a Therapeutic Index (TI) of 100, what does this mathematically mean?", "options": ["The effective dose is 100 times higher than the toxic dose", "The toxic dose is 100 times higher than the effective dose", "The drug is toxic to 100% of patients", "The drug is 100% ineffective"], "correctAnswerIndex": 1, "explanation": "TI = TD50 / ED50. A TI of 100 means the toxic dose is 100 times greater than the therapeutic dose in 50% of the population."}, {"text": "Why are Narrow Therapeutic Index (NTI) drugs considered high-risk in clinical practice?", "options": ["They are completely ineffective in most people", "Small changes in dose or blood levels can easily lead to therapeutic failure or severe toxicity", "They can only be manufactured as expensive biologics", "They cannot be absorbed orally"], "correctAnswerIndex": 1, "explanation": "Because NTI drugs have a tiny safety margin, minor dosage adjustments or drug-drug interactions can push the blood levels into toxic or sub-therapeutic ranges."}, {"text": "Two drugs are taken together. Drug A blocks liver Cytochrome P450 enzymes that metabolize Drug B. What is the likely toxicological consequence?", "options": ["Drug B's blood level will crash, leading to therapeutic failure", "Drug B's blood level will rise, potentially causing toxicity", "Drug A will immediately become inactive", "Both drugs will be excreted instantly by the kidneys"], "correctAnswerIndex": 1, "explanation": "Inhibiting the enzyme that metabolizes Drug B slows its clearance, allowing it to accumulate to dangerous, potentially toxic levels in the blood."}], "resources": [{"title": "Therapeutic Index and Drug Safety", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+therapeutic+index+drug+safety", "duration": "Various"}, {"title": "Cytochrome P450 Enzyme Interactions", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+cytochrome+p450+enzyme+interactions", "duration": "Various"}]}, {"id": "history-of-pharmacology", "title": "A Brief History of Pharmacology: From Willow Bark to mRNA Vaccines", "summary": "Take a journey through the evolution of pharmacology. Explore ancient remedies, morphine isolation, the thalidomide tragedy, and rational drug design.", "badgeName": "History Master", "explorerContent": "\n### 🌿 Ancient Trials and Errors\nFor thousands of years, humans relied on plants and trial-and-error to treat illness:\n* Ancient Greeks discovered chewing **willow bark** relieved fevers and inflammation (because it contains the ingredient that makes aspirin).\n* Indigenous peoples of South America chewed cinchona bark to treat malaria.\nHowever, these crude plant mixtures were of unknown strengths, and nobody knew how they actually worked.\n\n---\n\n### 🌟 3 Milestones of Modern Science\n\n1. **Morphine Isolation (1804)**: German pharmacist **Friedrich Sertürner** extracted pure **morphine** from opium. **This was the first time in history anyone isolated a single, pure active chemical from a plant**, marking the birth of scientific pharmacology!\n2. **Aspirin Synthesis (1897)**: Chemist **Felix Hoffmann** modified the willow bark chemical to synthesize **aspirin**, creating a pain reliever that was much gentler on the stomach.\n3. **Penicillin Discovery (1928)**: **Alexander Fleming** accidentally noticed a mold that killed bacteria in his lab. This led to the first true antibiotic, saving millions of lives from simple infections.\n\n---\n\n### 👶 The Thalidomide Tragedy & Drug Laws\nIn the 1960s, a sleeping pill called \"thalidomide\" was widely given to pregnant women for morning sickness. Tragically, it caused over 10,000 babies worldwide to be born with severe limb deformities (phocomelia).\nThis disaster permanently changed medicine! It forced governments globally to pass laws requiring **every new drug to pass extremely strict safety, toxicity, and human clinical trial tests** before hitting the market.\n\n---\n\n### 💻 Rational Drug Design\nToday, scientists don't rely on luck. We use **molecular rational drug design**: using computers to **map the 3D shape of a disease target (like a lock on a cancer cell)**, and then **designing a custom chemical key** to fit that lock perfectly, avoiding side effects!\n", "advancedContent": "\n### Epistemological and Chemical Paradigm Shifts\n\nThe transition of therapeutics in the 19th century from vitalism (the belief that organic matter possessed a unique life force) to chemical reductionism laid the groundwork for pharmacology. Pioneers like Oswald Schmiedeberg and Rudolf Buchheim established the first pharmacological institutes, converting the field into a quantitative, experimental science.\n\n#### Chemistry of Aspirin Acetylation\nFelix Hoffmann's acetylation of salicylic acid is a landmark in medicinal chemistry. Salicylic acid acts as a reversible inhibitor of cyclooxygenase (COX) enzymes. The introduction of the acetyl group converts it into an **irreversible inhibitor**: aspirin covalently transfers its acetyl group to a serine residue within the catalytic channel (Ser-530 in COX-1, Ser-516 in COX-2), permanently blocking arachidonic acid access.\n\n#### Molecular Mechanism of Thalidomide Teratogenicity\nThalidomide (which undergoes rapid in vivo interconversion between its (R)- and (S)-enantiomers) had its molecular mechanism resolved decades after the tragedy:\n* Thalidomide binds to **Cereblon (CRBN)**, the substrate recognition component of the CRL4 ubiquitin ligase complex.\n* This binding alters the ligase's substrate specificity, recruiting and leading to the aberrant ubiquitination and degradation of **SALL4**, a key transcription factor required for embryonic limb bud development.\n* SALL4 loss halts limb bud outgrowth, explaining phocomelia and mandating rigorous teratogenicity testing today.\n\n#### Structural Biology and In Silico Docking\nModern rational design combines structural biology and computational chemistry:\n* High-resolution **X-ray crystallography**, **Nuclear Magnetic Resonance (NMR)**, and **Cryo-Electron Microscopy (Cryo-EM)** resolve the atomic coordinates of disease proteins.\n* **In Silico High-Throughput Screening (HTS)** simulates millions of ligands docking into active pockets, computing Gibbs free binding energy ($\\Delta G$).\n* Highly successful outcomes include **imatinib** (targeting the BCR-ABL kinase in Chronic Myeloid Leukemia) and HIV protease inhibitors.\n", "content": "\n### The Dawn of Therapeutics\n\nFor millennia, human medicine relied on trial-and-error **herbalism**:\n* Ancient Egyptians used garlic to treat infections.\n* South American indigenous peoples chewed cinchona bark (containing quinine) to cure malaria.\n* Ancient Greeks used white willow bark (containing salicin) to alleviate fever and inflammatory pain.\n\nHowever, these crude mixtures lacked standardization, standardized dosing, and mechanistic understanding.\n\n### The Age of Isolation and Synthesis (19th Century)\n\nAdvancements in chemistry allowed humanity to isolate pure active molecules, giving rise to modern pharmacology:\n* **Morphine Isolation (1804)**: Friedrich Sertürner isolated morphine from opium, representing the first time an active ingredient was isolated from a natural source.\n* **Aspirin Synthesis (1897)**: Felix Hoffmann acetylated salicin to synthesize acetylsalicylic acid (aspirin), reducing gastric irritation and marking the birth of the synthetic pharmaceutical industry.\n\n### The Antibiotic Revolution\n\nIn **1928**, **Alexander Fleming** made a serendipitous discovery:\n* He noticed a *Penicillium* mold contaminating a bacterial plate was killing the surrounding bacteria.\n* This led to the isolation of penicillin, the first true antibiotic. Prior to this, minor cuts or standard bacterial infections often led to fatal sepsis.\n\n### The Thalidomide Tragedy & Regulatory Transformation (1950s-1960s)\n\nThalidomide, marketed in Europe as a safe sedative for pregnant women, caused over 10,000 children worldwide to be born with severe limb malformations (phocomelia).\n* **Dr. Frances Kelsey** (an FDA reviewer) blocked its approval in the US due to a lack of safety data.\n* This tragedy forced global regulators to mandate rigorous preclinical safety and prospective clinical trial testing before marketing approval.\n\n### Molecular Rational Drug Design\n\nToday, drug discovery has shifted from empirical chemical screening to **rational drug design**:\nPharmacologists utilize structural biology (such as X-ray crystallography) to **map the 3D shape of disease targets (proteins)**. Researchers then **engineer customized molecules in silico with shapes and chemical charges tailored to fit these targets precisely**, maximizing efficacy while avoiding off-target toxicity.\n", "keyTakeaways": ["Pharmacology evolved from empirical plant herbalism into a precise molecular science.", "The isolation of morphine in 1804 by Sertürner demonstrated that natural remedies act via single, purified chemical molecules.", "The thalidomide teratogenicity disaster revolutionized regulatory science, mandating comprehensive preclinical safety and prospective clinical trials.", "Modern drug discovery uses rational drug design, tailoring chemical structures to fit the 3D atomic structures of target macromolecules."], "quiz": [{"text": "Which historical event represents the first time an active chemical compound was isolated in pure form from a medicinal plant?", "options": ["Felix Hoffmann's synthesis of aspirin", "Friedrich Sertürner's isolation of morphine from opium in 1804", "Alexander Fleming's discovery of Penicillium mold", "The FDA blocking thalidomide's approval"], "correctAnswerIndex": 1, "explanation": "Friedrich Sertürner's 1804 isolation of morphine from opium poppies proved for the first time that botanical remedies exert their biological effects via distinct, pure chemical entities."}, {"text": "How did the thalidomide tragedy of the 1960s shape the modern pharmaceutical industry?", "options": ["It led to a total ban on all synthetic pharmaceuticals", "It forced global regulators to mandate rigorous safety, toxicity, and multi-phase clinical testing before drug approval", "It proved that natural remedies are always safer than synthetic drugs", "It accelerated the discovery of new classes of antibiotics"], "correctAnswerIndex": 1, "explanation": "Thalidomide-induced birth defects led directly to sweeping global reforms, establishing modern, multi-phase clinical trials and pre-market safety testing as strict legal mandates."}, {"text": "What is the core principle of molecular rational drug design?", "options": ["Screening random soil samples to find novel fungi", "Testing ancient herbal remedies until one relieves symptoms", "Analyzing the 3D atomic structure of a disease target and engineering a customized molecule to fit it precisely", "Synthesizing as many random chemicals as possible to test them blindly"], "correctAnswerIndex": 2, "explanation": "Rational drug design uses structural biology and computers to analyze a target protein's 3D active site, crafting custom molecules to dock into and modulate it with high selectivity."}], "resources": [{"title": "Brief History of Medicine & Pharmacology", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+history+of+medicine", "duration": "Various"}, {"title": "Discovery of Penicillin", "channel": "Imperial College London", "url": "https://www.youtube.com/results?search_query=penicillin+discovery+alexander+fleming", "duration": "Various"}]}, {"id": "intro-pharmacology", "title": "Introduction to Pharmacology", "summary": "Discover the fundamental principles of how drugs interact with living systems, and master the core division between Pharmacokinetics and Pharmacodynamics.", "badgeName": "Pharmaco Pioneer", "explorerContent": "\n### 💊 Welcome to Pharmacology!\n**Pharmacology** is the science of how drugs interact with our bodies. It is different from *pharmacy* (which is the preparation and dispensing of medicines, the job of your local pharmacist). Pharmacology is about understanding the underlying science of how medicines work.\n\n---\n\n### ⚖️ The Two Pillars of Pharmacology: PK vs. PD\nTo learn pharmacology, you must master the difference between these two core terms:\n\n1. **Pharmacokinetics (PK)**: **What the body does to the drug**.\n   This tracks the drug's journey inside your body. You can remember it using the acronym **ADME**:\n   * **Absorption**: How the drug enters your bloodstream (like swallowing a pill).\n   * **Distribution**: How the drug travels through your blood to different organs and tissues.\n   * **Metabolism**: How your liver chemically breaks down or modifies the drug.\n   * **Excretion**: How your kidneys filter and remove the drug from your body (in urine).\n\n2. **Pharmacodynamics (PD)**: **What the drug does to the body**.\n   This studies how the drug acts on cells to produce a therapeutic effect. For example, a drug molecule binding to a specific enzyme (a helper protein) on a cell and **blocking (inhibiting) its function** to lower blood pressure. This \"binding and changing\" is a **pharmacodynamic mechanism**.\n\n---\n\n### 🔑 The Chemical Keys of Medicines\nDrugs act like custom-designed chemical keys that fit into specific locks (targets) on cells:\n* 🛎️ **Receptors**: Communication receivers on cells.\n* ⚙️ **Enzymes**: Proteins that speed up chemical reactions in the body.\n* 🌉 **Ion Channels**: Gated tunnels on cell boundaries.\n* 🚂 **Transporters**: Transmembrane transport pumps.\n", "advancedContent": "\n### 🧪 Quantitative Pharmacology & Systems Interaction\n\n**Pharmacology** is the quantitative study of drugs and their interactions with biological systems. It sits at the intersection of biochemistry, physiology, and pathology. Unlike **pharmacy**, which is clinical and operational, pharmacology is mechanistic, focusing on the quantitative relationship between chemical structure and biological response.\n\n### ⚖️ The Two Pillars: PK vs. PD\n\nDrug behavior is mathematically modeled using two distinct yet coupled systems:\n\n1. **Pharmacokinetics (PK)**: *What the body does to the drug.*\n   This mathematical modeling tracks plasma and tissue concentrations over time. It is governed by the **ADME** framework:\n   * **Absorption**: Rate and extent of drug entry into systemic circulation, quantified by systemic bioavailability ($F$).\n   * **Distribution**: The reversible partition of drug between vascular and extravascular spaces, quantified by the apparent Volume of Distribution ($V_d$).\n   * **Metabolism**: Enzymatic biotransformation (typically hepatic) rendering molecules polar for elimination.\n   * **Excretion**: Irreversible removal of drug/metabolites from the body, quantified by Clearance ($CL$).\n\n2. **Pharmacodynamics (PD)**: *What the drug does to the body.*\n   This models the biochemical and physiological response as a function of local concentration at the active site:\n   * **Receptor Association**: Governed by binding affinity ($K_d$) and receptor occupancy.\n   * **Signal Transduction**: Amplification of binding events via intracellular messengers (e.g., cAMP, $IP_3$/$DAG$).\n   * **Physiological Response**: Described by non-linear sigmoid curves establishing efficacy ($E_{max}$) and potency ($EC_{50}$).\n\n### 🔑 Core Concept: Drug Targets\n\nDrugs act by modulating the activity of four major classes of host macromolecular targets:\n* 🛎️ **Receptors**: Transmembrane or intracellular proteins designed to transduce endogenous signals (e.g., GPCRs).\n* ⚙️ **Enzymes**: Biological catalysts; drugs typically act as inhibitors blockading active catalytic sites (e.g., COX-1/2, HMG-CoA reductase).\n* 🌉 **Ion Channels**: Selective transmembrane pores; drugs act as channel blockers or allosteric modulators (e.g., voltage-gated sodium channels).\n* 🚂 **Transporters**: Membrane-associated proteins coupling ATP hydrolysis or electrochemical gradients to pump molecules across lipid bilayers (e.g., serotonin transporter).\n", "content": "\n### 🧪 Defining Pharmacology\n\n**Pharmacology** is the science of **drug action**—how chemical substances interact with living systems to alter function. It differs from *pharmacy*, which is a health profession focused on compounding, preparing, and dispensing therapeutic agents.\n\n![Pharmacology Lab & Molecular Research](https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=600&q=80)\n\n### ⚖️ The Two Pillars: PK and PD\n\nPharmacology is built upon two core, quantitative disciplines:\n\n```\n  ┌──────────────────────────────────────────────────────────┐\n  │                 Pharmacokinetics (PK)                    │\n  │              \"What the body does to the drug\"            │\n  └────────────────────────────┬─────────────────────────────┘\n                               │ (ADME processes)\n                               ▼\n        [Absorption] ──► [Distribution]\n                               │\n                               ▼\n        [Metabolism] ──► [Excretion]\n                               │\n                               ▼\n  ┌──────────────────────────────────────────────────────────┐\n  │                 Pharmacodynamics (PD)                    │\n  │              \"What the drug does to the body\"            │\n  └────────────────────────────┬─────────────────────────────┘\n                               │ (Drug-Target interactions)\n                               ▼\n        [Target Binding] ──► [Cellular Cascade] ──► [Physiological Effect]\n```\n\n1. **Pharmacokinetics (PK)**: *What the body does to the drug.*\n   It quantitatively tracks a drug's transit through the body via the **ADME** framework:\n   * **Absorption (A)**: The movement of drug from its site of administration into the blood.\n   * **Distribution (D)**: The reversible transfer of drug between the circulation and peripheral tissues.\n   * **Metabolism (M)**: The enzymatic biotransformation of the parent drug into metabolites, primarily in the liver.\n   * **Excretion (E)**: The irreversible removal of the drug and its metabolites from the body, primarily via kidneys.\n\n2. **Pharmacodynamics (PD)**: *What the drug does to the body.*\n   It explores the molecular mechanisms by which drugs bind to targets and elicit biochemical or physiological responses:\n   * **Binding**: The affinity-driven interaction between a drug and its macromolecular target.\n   * **Transduction**: The intracellular signaling cascades activated by this binding.\n   * **Physiological Effect**: The ultimate clinical benefit or adverse toxicity produced.\n\n![Pills and Scientific Graph representing PK/PD](https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80)\n\n### 🔑 Core Concept: Drug Targets\n\nMost drugs act as molecular \"keys\" that fit into specific macromolecular \"locks\" (targets):\n* 🛎️ **Receptors**: Signal-transmitting proteins on or in cells (e.g., Beta-2 adrenergic receptor).\n* ⚙️ **Enzymes**: Catalysts driving chemical reactions (e.g., cyclooxygenase).\n* 🌉 **Ion Channels**: Gated pores controlling ion flow (e.g., voltage-gated sodium channels).\n* 🚂 **Transporters**: Transmembrane proteins carrying polar molecules across membranes.\n", "keyTakeaways": ["Pharmacology is the study of how chemical agents affect biological systems.", "Pharmacokinetics (PK) is what the body does to the drug (ADME: Absorption, Distribution, Metabolism, Excretion).", "Pharmacodynamics (PD) is what the drug does to the body (mechanisms of action, targets, and physiological effects).", "Most drugs work by binding to specific molecular targets: receptors, enzymes, ion channels, or transporters."], "quiz": [{"text": "Which branch of pharmacology is concerned with \"what the body does to the drug\"?", "options": ["Pharmacodynamics", "Pharmacokinetics", "Pharmacoepidemiology", "Pharmacogenomics"], "correctAnswerIndex": 1, "explanation": "Pharmacokinetics (PK) is the branch of pharmacology that models how the body absorbs, distributes, metabolizes, and excretes drugs (ADME)."}, {"text": "If a drug binds to an enzyme and stops it from working, this is an example of a:", "options": ["Pharmacokinetic behavior", "Absorption barrier", "Pharmacodynamic mechanism", "First-pass elimination"], "correctAnswerIndex": 2, "explanation": "Studying how a drug interacts with biological targets (like enzymes or receptors) to produce a biochemical response is the domain of pharmacodynamics (PD)."}, {"text": "Which acronym is standard in pharmacology to describe the four phases of pharmacokinetics?", "options": ["ADME", "COPD", "GPCR", "RAAS"], "correctAnswerIndex": 0, "explanation": "ADME stands for Absorption, Distribution, Metabolism, and Excretion—the four primary pharmacokinetic steps a drug undergoes."}], "resources": [{"title": "Pharmacokinetics vs Pharmacodynamics", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+pharmacokinetics+vs+pharmacodynamics", "duration": "Various"}, {"title": "Introduction to Pharmacology Course", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+introduction+to+pharmacology", "duration": "Various"}]}, {"id": "drug-receptors", "title": "Drug Receptors & Signal Transduction", "summary": "Discover the body's cellular locks. Explore GPCRs, ion channels, and how cells communicate with therapeutic molecules.", "badgeName": "Receptor Guru", "explorerContent": "\n### 🔑 Cellular Locks and Chemical Keys\nOur cells are covered and filled with \"locks\" called **receptors**. Normally, your body sends chemical messages (keys) to open these locks and tell cells what to do. Drugs are artificial keys designed to slide into these locks, turning them on, blocking them, or freezing them in place.\n\n---\n\n### 🔑 The 4 Main \"Lock\" Families\nBased on how they are built and how fast they respond, receptors are grouped into four families:\n\n1. **Ligand-Gated Ion Channels** (The Fastest!):\n   * **How it works**: When the drug key inserts, a gate immediately swings open, letting charged salts (ions like sodium or chloride) rush into the cell.\n   * **Speed**: **Extremely fast (takes milliseconds / thousandths of a second)**.\n   * **Example**: GABA-A receptors in the brain (the drug **diazepam** inserts here, instantly calming brain activity to reduce anxiety).\n2. **G-Protein Coupled Receptors (GPCRs)** (The Most Common):\n   * **How it works**: When a drug binds, it is like ringing a doorbell. It activates a helper protein inside (the **G-protein**). This G-protein then triggers chemical messengers inside the cell, like **cAMP**.\n   * **Speed**: Fast (seconds).\n   * **Example**: Beta-2 receptors in your lungs.\n3. **Kinase-Linked Receptors**:\n   * **How it works**: Binding directly activates enzymes inside, leading to slow cell growth or metabolic changes.\n   * **Speed**: Slow (minutes to hours).\n   * **Example**: Insulin receptors.\n4. **Nuclear Receptors (Intracellular Receptors)** (The Deepest!):\n   * **How it works**: Located deep inside the cell. The drug must be fat-soluble to **cross the cell membrane barrier** to find it. Once bound, it binds directly to DNA to turn genes on or off.\n   * **Speed**: **Very slow (hours to days)**, but its effects are very long-lasting.\n", "advancedContent": "\n### Receptor Theory & Biophysics of Transduction\n\nReceptors are dynamic macromolecular machines. The thermodynamics of ligand-receptor association and subsequent conformational states represent the core of pharmacodynamics.\n\n### Structural and Biophysical Profiles of Receptor Superfamilies\n\n1. **Ligand-Gated Ion Channels**:\n   * **Structure**: Typically pentameric assemblies forming a central ion-selective pore. Ligand binding at extracellular sites induces allosteric conformational changes that open the pore gate, allowing ions to flow down their electrochemical gradient.\n   * **Time Scale**: Microseconds to milliseconds.\n\n2. **G-Protein Coupled Receptors (GPCRs)**:\n   * **Structure**: Monomeric proteins with 7 transmembrane alpha-helices. Binding of an agonist in the orthosteric pocket triggers an outward movement of TM6, opening an intracellular cavity that binds and releases G-alpha proteins:\n     * **$G\\alpha_s$**: Stimulates adenylate cyclase, converting ATP to cyclic AMP (cAMP), activating Protein Kinase A (PKA).\n     * **$G\\alpha_i$**: Inhibits adenylate cyclase, decreasing cAMP levels.\n     * **$G\\alpha_q$**: Activates Phospholipse C (PLC), cleaving $PIP_2$ into $IP_3$ and $DAG$. $IP_3$ binds receptors on the sarcoplasmic reticulum, releasing $Ca^{2+}$.\n   * **Time Scale**: Seconds.\n\n3. **Receptor Tyrosine Kinases (RTKs)**:\n   * **Structure**: Single transmembrane domain proteins. Agonist binding induces receptor homo- or hetero-dimerization, activating intracellular tyrosine kinase domains that cross-phosphorylate key tyrosine residues, creating docking sites for SH2-domain proteins to activate MAP-kinase or Akt pathways.\n   * **Time Scale**: Minutes to hours.\n\n4. **Intracellular Nuclear Receptors**:\n   * **Structure**: Soluble monomeric proteins with a ligand-binding domain, a zinc-finger DNA-binding domain, and a transactivation domain. Ligands must be highly lipophilic to diffuse across the plasma membrane. Binding triggers chaperone dissociation, dimerization, translocation to the nucleus, and binding to Hormone Response Elements (HREs) to recruit co-activators.\n   * **Time Scale**: Hours to days.\n\n### Mathematical Modeling of Binding Kinetics\n\nReceptor binding is modeled using the Law of Mass Action:\n\n$$[D] + [R] \\rightleftharpoons [DR] \\rightarrow \\text{Effect}$$\n\nThe equilibrium dissociation constant is defined as $K_d = \\frac{[D][R]}{[DR]}$.\nReceptor occupancy ($\\rho$) as a function of free ligand concentration is modeled by the Hill-Langmuir equation:\n\n$$\\rho = \\frac{[D]}{[D] + K_d}$$\n\n* **Affinity**: Quantified by $1/K_d$. Lower $K_d$ indicates greater binding strength.\n* **Intrinsic Activity (\\alpha)**: Under Ariëns' theory, $\\alpha = 1.0$ represents a full agonist, while $\\alpha = 0$ is an antagonist.\n", "content": "\n### What is a Receptor?\n\nA **receptor** is a specialized protein molecule embedded in a cell's surface or floating within its cytoplasm. Its physiological purpose is to bind endogenous signaling molecules (hormones, neurotransmitters) and trigger a cellular response. Drugs work by hijacking or blocking these receptors.\n\n### The Four Receptor Superfamilies\n\nReceptors are categorized into four superfamilies based on structure and signal transduction speed:\n\n1. **Ligand-Gated Ion Channels**:\n   * **Mechanism**: Direct pore opening upon ligand binding, allowing ions (Na+, Cl-) to flow across the membrane in milliseconds, changing membrane potential.\n   * **Example**: Nicotinic acetylcholine receptor; GABA-A receptor (target of diazepam).\n\n2. **G-Protein Coupled Receptors (GPCRs)**:\n   * **Mechanism**: The largest drug target superfamily. Composed of 7 transmembrane helices. Ligand binding activates an intracellular G-protein (Gs, Gi, or Gq sub-types) to modulate second messengers:\n     * **Gs**: Stimulates adenylate cyclase, increasing **cAMP** (e.g., salbutamol).\n     * **Gi**: Inhibits adenylate cyclase, decreasing **cAMP** (e.g., loperamide).\n     * **Gq**: Stimulates phospholipase C, increasing intracellular calcium (e.g., histamine receptors).\n   * **Speed**: Rapid (seconds to minutes).\n\n3. **Kinase-Linked Receptors**:\n   * **Mechanism**: Ligand binding causes receptor dimerization and activates intracellular tyrosine kinase domains, triggering a phosphorylation cascade.\n   * **Speed**: Slow (minutes to hours).\n   * **Example**: Insulin and growth factor receptors.\n\n4. **Nuclear Receptors (Intracellular Receptors)**:\n   * **Mechanism**: Soluble proteins located in the cytoplasm or nucleus. Lipophilic drugs must cross the membrane to bind. Once activated, they bind DNA response elements, modulating gene transcription.\n   * **Speed**: Very slow (hours to days).\n   * **Example**: Glucocorticoid receptors.\n\n### Affinity and Intrinsic Activity\n\n* **Affinity**: How tightly a drug binds to its receptor. High affinity means low concentrations of drug saturate the receptor.\n* **Intrinsic Activity**: The ability of a bound drug to activate the receptor and produce a biological response.\n", "keyTakeaways": ["Receptors are specialized macromolecular proteins designed to receive chemical ligands and trigger cellular responses.", "The four receptor superfamilies are ligand-gated ion channels, G-protein coupled receptors, kinase-linked receptors, and nuclear receptors.", "GPCRs use G-protein families (Gs, Gi, Gq) to control intracellular second messengers (cAMP, calcium).", "Nuclear receptors are located inside the cell, requiring lipophilic drugs to cross membranes, acting slowly but long-lastingly."], "quiz": [{"text": "Which type of receptor operates on a millisecond timescale (fastest)?", "options": ["G-Protein Coupled Receptors (GPCRs)", "Ligand-Gated Ion Channels", "Kinase-Linked Receptors", "Nuclear Receptors"], "correctAnswerIndex": 1, "explanation": "Ligand-gated ion channels directly open a pore upon ligand binding, allowing ions to flow instantly down their electrochemical gradient."}, {"text": "A drug must cross the cell membrane to bind to which type of receptor?", "options": ["Ion channels", "G-Protein Coupled Receptors", "Kinase-Linked Receptors", "Nuclear Receptors"], "correctAnswerIndex": 3, "explanation": "Nuclear receptors reside inside the cytoplasm or nucleus, requiring lipophilic drug molecules to diffuse across the cellular lipid bilayer."}, {"text": "If a G-protein coupled receptor is coupled to a Gi protein, what happens inside the cell upon activation?", "options": ["Calcium concentration rises", "cAMP concentration rises", "cAMP concentration decreases", "DNA transcription is permanently shut off"], "correctAnswerIndex": 2, "explanation": "Gi is inhibitory; its activation inhibits adenylate cyclase, resulting in a decrease in intracellular cyclic AMP (cAMP) levels."}], "resources": [{"title": "Drug Receptors and Signal Transduction", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+drug+receptors+signal+transduction", "duration": "Various"}, {"title": "G-Protein Coupled Receptors Explained", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+g+protein+coupled+receptors", "duration": "Various"}]}, {"id": "agonists-antagonists", "title": "Agonists vs. Antagonists", "summary": "Understand how drugs switch receptors on or off. Explore the critical differences between competitive and non-competitive blockade.", "badgeName": "Molecular Matchmaker", "explorerContent": "\n### 🔑 Keys of Different Types: Turning On vs. Blockading\nOnce a drug binds to a cell lock (receptor), we classify it by what it actually does. We call this its \"efficacy\":\n\n---\n\n### 🟢 1. Agonists (Active Keys)\nThese drugs slide into a receptor lock and **turn it, activating the cell response**:\n* **Full Agonist**: Perfect fit! It produces a 100% maximum effect (like the asthma drug **salbutamol** turning on breathing airways).\n* **Partial Agonist**: A flawed key. It fits but can only turn the lock halfway, producing a limited, sub-maximum response even at high doses.\n* **Inverse Agonist**: Some locks are \"leaky\" and vibrate on their own (basal activity). An inverse agonist freezes the lock completely, lowering its activity below normal levels.\n\n---\n\n### 🔴 2. Antagonists (Broken Keys that Block)\nAntagonists bind to receptors but have **zero activation power (efficacy = 0)**. They act like a broken key stuck in a lock: they do nothing themselves, but they **physically block** your body's natural keys (like adrenaline) from opening the lock.\n\nWe divide antagonists into two main types:\n* **Competitive Antagonists**:\n  * **How they block**: They bind **reversibly (temporarily) to the same lock site (active site)**.\n  * **How to beat them**: Since they only bind temporarily, if you **increase the concentration of agonist keys** (add tons of active keys), you can crowd them out and restore 100% maximum response. This shifts the dose-response curve **to the right** (needing more drug to get the same effect).\n* **Non-Competitive Antagonists**:\n  * **How they block**: They bind **irreversibly (covalently)**, or bind to a **different side site (allosteric site)**, changing the lock shape so the active key can't fit anymore.\n  * **How to beat them**: **You can't**. No matter how many active keys you add, they cannot dislodge the blockade. This shifts the curve **downward (reducing the maximum possible effect)**.\n", "advancedContent": "\n### Quantitative Receptorology and Ligand Classification\n\nIn pharmacodynamics, ligands are characterized by **affinity ($K_d$)** and **efficacy/intrinsic activity ($\\alpha$)**. We model these relationships using the two-state receptor model, where receptors exist in dynamic equilibrium between active ($R^*$) and inactive ($R$) states:\n\n### 1. Agonists\n\n* **Full Agonists**: Display high selective affinity for the $R^*$ state, shifting the equilibrium entirely to the active conformation (intrinsic activity $\\alpha = 1$, e.g., salbutamol).\n* **Partial Agonists**: Display moderate affinity for both $R$ and $R^*$ conformations. Even at 100% occupancy, they cannot fully shift the receptor pool to $R^*$, yielding $0 \u003c \\alpha \u003c 1$. In the presence of a full agonist, they act as functional antagonists by displacing the more efficacious ligand (e.g., aripiprazole).\n* **Inverse Agonists**: Display selective affinity for the $R$ state, shifting constitutively active receptors into inactive states, yielding a negative intrinsic activity $\\alpha \u003c 0$ (e.g., cetirizine).\n\n### 2. Antagonists\n\nAntagonists have binding affinity but zero intrinsic efficacy ($\\alpha = 0$). They do not disturb the $R \\rightleftharpoons R^*$ equilibrium, but merely occupy the ligand-binding site.\n\n#### Competitive Antagonist Kinetics\nCompete reversibly with agonists for the orthosteric active site.\n* **Schild Equation**: Parallel rightward shift of the agonist concentration-response curve with no reduction in $E_{max}$:\n\n$$\\frac{[A']}{[A]} = 1 + \\frac{[B]}{K_B}$$\n\nWhere $[A']/[A]$ is the Dose Ratio, $[B]$ is the antagonist concentration, and $K_B$ is the antagonist dissociation constant. Apparent $EC_{50}$ increases.\n\n#### Non-Competitive Antagonist Kinetics\n* **Irreversible Blockade**: Form covalent bonds with the active site (e.g., aspirin acetylating COX serine residues) or dissociate extremely slowly.\n* **Allosteric Blockade**: Bind to spatially distinct allosteric sites, modifying orthosteric geometry.\nNo amount of agonist can displace the antagonist, permanently reducing the active receptor pool and shifting the concentration-response curve downward ($E_{max}$ decreases).\n", "content": "\n### Molecular Keys: Turning On and Off Receptors\n\nReceptors are molecular locks; drugs are chemical keys. We classify drugs based on their **intrinsic activity**—their ability to activate a receptor and elicit a biological response once bound.\n\n### 1. Agonists — Activating the Receptor\n\nAgonists mimic endogenous signaling molecules to stabilize the receptor in an active conformation:\n* **Full Agonist**: Possesses maximum intrinsic activity, producing a 100% biological response (e.g., **salbutamol** dilating airways).\n* **Partial Agonist**: Produces a sub-maximal response even when 100% of the receptors are occupied.\n* **Inverse Agonist**: Binds to constitutively active receptors (which signal even without a ligand) and drives their activity below baseline levels (e.g., the antihistamine **cetirizine**).\n\n### 2. Antagonists — Blocking the Signal\n\nAntagonists bind to receptors but have zero intrinsic activity. They act like a broken key, producing no effect but preventing agonists from binding:\n* **Competitive Antagonists**:\n  * Bind reversibly to the same active site as the agonist.\n  * **Can be overcome by increasing the agonist concentration**.\n  * Shift the agonist's dose-response curve parallelly **to the right** (potency decreases, $E_{max}$ remains unchanged; e.g., **propranolol**).\n* **Non-Competitive Antagonists**:\n  * Bind irreversibly (covalently) to the active site, or bind to an **allosteric site** to change receptor shape.\n  * **Cannot be overcome by increasing agonist concentration**.\n  * Shift the agonist's curve **downward** (reduces $E_{max}$; e.g., **aspirin** covalently binding COX).\n", "keyTakeaways": ["Agonists activate receptors. Full agonists elicit a 100% maximal biological response; partial agonists yield a limited response.", "Antagonists occupy receptors but do not activate them (intrinsic activity is zero), blockading endogenous ligands.", "Competitive antagonists bind reversibly; blockade is entirely overcome by increasing agonist concentration (curve shifts right).", "Non-competitive antagonists bind covalently or allosterically; blockade cannot be overcome (curve shifts downward)."], "quiz": [{"text": "Which of the following is a key characteristic of a competitive antagonist?", "options": ["It permanently binds to the receptor and cannot be displaced", "It binds to an allosteric site and changes the receptor's shape", "It binds reversibly to the active site and can be displaced by higher concentrations of an agonist", "It actively suppresses the basal, spontaneous activity of a receptor"], "correctAnswerIndex": 2, "explanation": "Competitive antagonists bind reversibly to the active site. Increasing the agonist concentration can displace them and restore the full maximal effect."}, {"text": "If a drug binds to a receptor and reduces its basal (spontaneous) activity below baseline, it is classified as a:", "options": ["Full agonist", "Competitive antagonist", "Partial agonist", "Inverse agonist"], "correctAnswerIndex": 3, "explanation": "Inverse agonists stabilize the inactive state of constitutively active receptors, bringing signaling below basal levels."}, {"text": "How does a non-competitive antagonist affect an agonist's dose-response curve?", "options": ["It shifts the curve to the right, keeping maximum response (Emax) constant", "It shifts the curve downward, reducing the maximum possible response (Emax)", "It shifts the curve to the left, increasing drug sensitivity", "It has no impact on the curve shape"], "correctAnswerIndex": 1, "explanation": "Because non-competitive antagonists permanently disable receptors or change their shape, no amount of agonist can overcome them, lowering the maximum response (Emax)."}], "resources": [{"title": "Agonists, Antagonists & Dose Response Curves", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+agonists+antagonists+dose+response", "duration": "Various"}, {"title": "Pharmacodynamics: Agonists and Antagonists", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+pharmacodynamics+agonists+antagonists", "duration": "Various"}]}, {"id": "adme-pharmacokinetics", "title": "ADME Processes", "summary": "A journey inside the body. Explore how your body absorbs, distributes, metabolizes, and excretes (ADME) chemical substances.", "badgeName": "Kinetic Cruiser", "explorerContent": "\n### 🚶‍♂️ The Body's Reaction to Drugs (ADME)\nWhen you take a pill, your body doesn't see it as a welcome guest. It treats it as an invader (a foreign object) and immediately works to block it, break it down, and throw it out. This transit is called **ADME**:\n\n---\n\n### 📥 1. Absorption — Entering Blood\nHow a drug moves from where you take it into your bloodstream.\n* **Oral (swallowing)**: Absorbed by your digestive tract, the drug is sent via the portal vein straight to the **liver** first. Liver enzymes act like border patrol, breaking down a massive percentage of the drug before it ever circulates to the rest of your body. This is the **first-pass effect**.\n* **Intravenous (IV)**: Skips absorption entirely because it is injected straight into a vein, giving **100% bioavailability (F = 1)**.\n\n---\n\n### 🚚 2. Distribution — Travelling to Organs\nHow a drug rides through your blood to reach cell targets:\n* **Protein binding**: In blood, drugs bind reversibly to proteins like **albumin**. **Only unbound, 'free' drug molecules can slip out of capillaries to bind cell receptors and work**.\n* **Volume of Distribution (Vd)**: How widely a drug spreads. If a drug is **extremely fat-soluble (lipophilic)**, it leaves the blood to hide in **body fat and deep tissues**, making it hard for liver/kidney filters to clear it. It stays in the body for a very long time!\n\n---\n\n### ✂️ 3. Metabolism — Chemical Transformation\nYour liver is the chemical refinery of your body, altering drug structures to make them water-soluble and easy to excrete:\n* **Phase I (Functionalization)**: Mainly driven by **Cytochrome P450 (CYP450)** enzymes, adding polar handles (like -OH) to molecules.\n* **Phase II (Conjugation)**: Attaching huge water-soluble groups (like glucuronic acid) to render drugs completely inactive and highly water-soluble.\n\n---\n\n### 📤 4. Excretion — Final Clearance\nThe final exit. Your **kidneys** act as the primary filters, flushing water-soluble drugs out into urine. Large molecules may be excreted by the liver into bile, leaving in feces.\n", "advancedContent": "\n### Mathematical Modeling of Pharmacokinetics\n\nThe rate of change of drug concentration in the body is modeled using compartment models, governed by key pharmacokinetic parameters:\n\n### 1. Absorption Kinetics\n\n* **Bioavailability ($F$)**:\n  Quantified by comparing oral and IV curves under the Area Under the Curve (AUC):\n\n$$F = \\frac{AUC_{oral} \\cdot Dose_{IV}}{AUC_{IV} \\cdot Dose_{oral}}$$\n\n* **First-Pass Hepatic Extraction**: The hepatic extraction ratio ($E_H$) determines systemic entry from portal venous blood.\n\n### 2. Distribution Volumes\n\n* **Protein Binding**:\n  Acidic drugs bind to **Albumin**; basic drugs bind to **$\\alpha_1$-acid glycoprotein**. The free fraction ($f_u = C_{free} / C_{total}$) dictates active pharmacodynamics and rate of clearance.\n* **Apparent Volume of Distribution ($V_d$)**:\n\n$$V_d = \\frac{A}{C_p}$$\n\n  Where $A$ is the total drug in the body and $C_p$ is plasma concentration. High $V_d$ indicates peripheral tissue sequestration (e.g., digoxin $V_d \\approx 500\\text{ L}$ due to tissue binding), yielding minimal plasma levels and prolonging elimination half-life ($t_{1/2} = 0.693 \\cdot V_d / CL$).\n\n### 3. Biotransformation\n\nHepatic metabolism is divided into two phases:\n* **Phase I (Functionalization)**: Governed by the microsomal CYP450 superfamily (e.g., CYP3A4, CYP2D6). This can form active metabolites or activate **prodrugs** (e.g., clopidogrel requires CYP-mediated conversion to its active thiol metabolite).\n* **Phase II (Conjugation)**: Catalyzed by transferases (e.g., UDP-glucuronosyltransferases), coupling molecules to polar groups.\n\n### 4. Clearance and Excretion\n\n* **Renal Clearance ($CL_R$)**:\n\n$$CL_R = \\text{Filtration Rate} + \\text{Secretion Rate} - \\text{Reabsorption Rate}$$\n\n  1. **Glomerular Filtration**: Passive filtration of unbound drug ($GFR \\approx 125\\text{ mL/min}$).\n  2. **Active Tubular Secretion**: OAT and OCT pumps transport drugs into the proximal tubule.\n  3. **Tubular Reabsorption**: Passive reabsorption of non-ionized lipophilic drugs in distal tubules. Altering urine pH can trap ions (ion trapping) to accelerate toxin clearance.\n", "content": "\n### The Xenobiotic Transit\n\nTo produce therapeutic outcomes, a drug must reach its active site in sufficient concentrations. The body views drugs as foreign xenobiotics, executing defenses to limit, biotransform, and eliminate them. This dynamic cycle is mapped by the **ADME** framework:\n\n### 1. Absorption\nThe transfer of drug from its site of administration to systemic circulation:\n* **Bioavailability (F)**: The fraction of administered drug entering circulation unchanged. IV has **100% bioavailability (F = 1)**. Oral drugs have **F \u003c 1** due to incomplete absorption and first-pass clearance.\n* **First-Pass Effect**: Oral drugs absorbed in the gut enter the **portal vein** and pass through the liver. Hepatic enzymes metabolize a significant fraction of the drug before it reaches systemic circulation.\n\n### 2. Distribution\nThe reversible, bi-directional transfer of drug between blood and peripheral tissues:\n* **Plasma Protein Binding**: Drugs bind reversibly to plasma proteins (primarily **albumin**). Only unbound \"free\" drug molecules can cross capillary membranes to bind receptors and exert pharmacological effects.\n* **Volume of Distribution (Vd)**: A proportional factor relating plasma concentration to total drug in the body:\n  * **Low Vd** (~4L): Drug is highly restricted to blood, often due to high albumin binding.\n  * **High Vd** (>40L): Drug is highly lipophilic, widely distributing and sequestering into peripheral tissues and lipids.\n\n### 3. Metabolism\nThe enzymatic biotransformation of drugs to render them polar and easily excreted. Primarily hepatic, split into:\n* **Phase I Reactions**: Introduce polar functional groups (-OH, -NH2) via oxidation, primarily catalyzed by the **Cytochrome P450 (CYP450)** enzyme family.\n* **Phase II Reactions**: Covalently attach large polar endogenous moieties (e.g., glucuronic acid) to render drugs inactive and highly water-soluble.\n* **Prodrugs**: Inactive compounds designed to be enzymatically activated in vivo (e.g., omeprazole).\n\n### 4. Excretion\nThe irreversible clearance of drug/metabolites from the body:\n* **Renal Excretion**: The primary pathway, involving glomerular filtration and active tubular secretion. Lipophilic non-ionized drugs undergo passive tubular reabsorption.\n* **Biliary Excretion**: Active secretion of large polar conjugates from hepatocytes into bile, excreted in feces.\n", "keyTakeaways": ["Absorption dictates systemic drug entry (IV is 100% bioavailable, oral undergoes first-pass metabolism).", "Only unbound, free drug molecules can cross capillary barriers to bind cell receptors.", "The liver is the primary metabolic organ, executing Phase I (CYP450 oxidation) and Phase II (conjugation) reactions to increase polarity.", "The kidneys are the primary excretory organ, filtering water-soluble compounds while lipophilic forms are reabsorbed."], "quiz": [{"text": "What is the \"first-pass effect\"?", "options": ["Rapid filtration of drugs through the kidneys upon first circulation", "Immediate binding of inhaled drugs to airway receptors", "The metabolism of an oral drug in the liver before it reaches systemic circulation", "The initial reversible binding of a drug to plasma albumin"], "correctAnswerIndex": 2, "explanation": "Oral drugs travel from the GI tract through the portal vein to the liver first, where hepatic enzymes metabolize a significant portion of the dose before it circulates systemically."}, {"text": "Why does a drug with an extremely high Volume of Distribution (Vd) remain in the body for a long time?", "options": ["It stays in the blood, easily filtered by glomeruli", "It sequestered in fat and deep peripheral tissues, keeping it away from hepatic and renal clearing organs", "It is bound irreversibly to plasma albumin", "It is immune to Phase II conjugation reactions"], "correctAnswerIndex": 1, "explanation": "High Vd means the drug is lipophilic and sequestered in tissues/lipids. Because it is out of the bloodstream, clearing organs (liver and kidneys) cannot access and clear it, prolonging its half-life."}, {"text": "Which liver enzyme superfamily is primarily responsible for Phase I (oxidation) drug metabolism?", "options": ["Glutathione S-transferases", "Cyclooxygenases (COX)", "Cytochrome P450 (CYP450)", "Proton Pumps (H+/K+ ATPase)"], "correctAnswerIndex": 2, "explanation": "The Cytochrome P450 (CYP450) enzyme superfamily in hepatocytes catalyzes the oxidation, reduction, and hydrolysis reactions of Phase I metabolism."}], "resources": [{"title": "Pharmacokinetics and ADME Processes", "channel": "Osmosis from Elsevier", "url": "https://www.youtube.com/results?search_query=osmosis+pharmacokinetics+ADME", "duration": "Various"}, {"title": "ADME Deep Dive", "channel": "Ninja Nerd", "url": "https://www.youtube.com/results?search_query=ninja+nerd+pharmacokinetics+ADME", "duration": "Various"}]}]</script>
+<script>
+(() => {
+  "use strict";
+
+  // ================= Tab switching =================
+  const tabs = [...document.querySelectorAll('.tab-btn')];
+  const panels = { explore: document.getElementById('panel-explore'), lessons: document.getElementById('panel-lessons') };
+  function setTab(name){
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    Object.entries(panels).forEach(([k, el]) => el.classList.toggle('active', k === name));
+    document.getElementById('hint').style.display = name === 'explore' ? '' : 'none';
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
+  tabs.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  document.querySelectorAll('[data-goto-lessons]').forEach(b => b.addEventListener('click', () => setTab('lessons')));
+
+  // ================= Mobile menu =================
+  const menuBtn = document.getElementById('menuBtn');
+  const iconMenu = document.getElementById('iconMenu');
+  const iconX = document.getElementById('iconX');
+  const mobileMenu = document.getElementById('mobileMenu');
+  let menuOpen = false;
+  function setMenuOpen(v){
+    menuOpen = v;
+    menuBtn.setAttribute('aria-expanded', String(v));
+    iconMenu.classList.toggle('hide', v);
+    iconX.classList.toggle('hide', !v);
+    mobileMenu.classList.toggle('open', v);
+  }
+  menuBtn.addEventListener('click', () => setMenuOpen(!menuOpen));
+  mobileMenu.querySelectorAll('[data-close-menu]').forEach(b => b.addEventListener('click', e => {
+    setTab(e.currentTarget.dataset.tab);
+    setMenuOpen(false);
+  }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) setMenuOpen(false); });
+  function syncHamburgerVisibility(){
+    menuBtn.style.display = window.innerWidth < 768 ? 'flex' : 'none';
+  }
+  window.addEventListener('resize', syncHamburgerVisibility);
+  syncHamburgerVisibility();
+
+  // ================= Lesson data + markdown + quiz (lesson library) =================
+  const LESSONS = JSON.parse(document.getElementById('lesson-data').textContent);
+
+  const grid = document.getElementById('lessonGrid');
+  LESSONS.forEach((l, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'lesson-card glass-card';
+    btn.innerHTML = `
+      <span class="lesson-num">${String(i + 1).padStart(2, '0')}</span>
+      <span class="lesson-body">
+        <h3>${esc(l.title)}</h3>
+        <p>${esc(l.summary)}</p>
+        <span class="badge-chip">Badge · ${esc(l.badgeName || '')}</span>
+      </span>`;
+    btn.addEventListener('click', () => openLesson(i));
+    grid.appendChild(btn);
+  });
+
+  document.querySelectorAll('[data-open-lesson]').forEach(b =>
+    b.addEventListener('click', () => { setTab('lessons'); openLesson(Number(b.dataset.openLesson)); }));
+
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function inline(s){
+    return esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  }
+  function md(src){
+    const lines = String(src || "").replace(/\r/g, "").split("\n");
+    const out = []; let para = [];
+    const flush = () => { if (para.length){ out.push("<p>" + inline(para.join(" ")) + "</p>"); para = []; } };
+    for (let i = 0; i < lines.length; i++){
+      const line = lines[i].trim();
+      if (!line){ flush(); continue; }
+      if (/^---+$/.test(line)){ flush(); out.push("<hr>"); continue; }
+      const h = line.match(/^(#{3,4})\s+(.*)$/);
+      if (h){ flush(); const t = h[1].length === 3 ? "h3" : "h4"; out.push(`<${t}>${inline(h[2])}</${t}>`); continue; }
+      if (line.startsWith("|") && /^\|[\s:|-]+\|$/.test((lines[i+1]||"").trim())){
+        flush();
+        const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+        const head = cells(line); i += 2; const body = [];
+        while (i < lines.length && lines[i].trim().startsWith("|")){ body.push(cells(lines[i])); i++; }
+        i--;
+        out.push('<div class="table-scroll"><table><thead><tr>' +
+          head.map(c => "<th>" + inline(c) + "</th>").join("") + "</tr></thead><tbody>" +
+          body.map(r => "<tr>" + r.map(c => "<td>" + inline(c) + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>");
+        continue;
+      }
+      const bullet = line.match(/^[*-]\s+(.*)$/);
+      const num = line.match(/^\d+\.\s+(.*)$/);
+      if (bullet || num){
+        flush(); const ordered = !!num; const items = [];
+        while (i < lines.length){
+          const t = lines[i].trim();
+          const m = ordered ? t.match(/^\d+\.\s+(.*)$/) : t.match(/^[*-]\s+(.*)$/);
+          if (!m) break; items.push("<li>" + inline(m[1]) + "</li>"); i++;
+        }
+        i--; out.push((ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>")); continue;
+      }
+      para.push(line);
+    }
+    flush();
+    return out.join("");
+  }
+
+  const dlg = document.getElementById('reader');
+  const elBadge = document.getElementById('reader-badge');
+  const elTitle = document.getElementById('reader-title');
+  const elProse = document.getElementById('reader-prose');
+  const elTake = document.getElementById('reader-takeaways');
+  const elQuiz = document.getElementById('reader-quiz');
+  const elScore = document.getElementById('reader-score');
+  const elRes = document.getElementById('reader-res');
+  const modeBtns = [...document.querySelectorAll('.mode')];
+  let current = null, mode = 'explorer', answered = 0, correct = 0;
+
+  const bodyFor = l => (mode === 'advanced' ? l.advancedContent : l.explorerContent) || l.content || '';
+  const paintMode = () => {
+    modeBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+    if (current) elProse.innerHTML = md(bodyFor(current));
+  };
+  const paintScore = () => {
+    const total = current ? current.quiz.length : 0;
+    elScore.textContent = answered ? `${correct}/${total} correct` : '';
+  };
+  function renderQuiz(l){
+    elQuiz.textContent = ''; answered = 0; correct = 0; paintScore();
+    l.quiz.forEach(q => {
+      const wrap = document.createElement('div'); wrap.className = 'q';
+      const t = document.createElement('div'); t.className = 'q-text'; t.textContent = q.text; wrap.appendChild(t);
+      const opts = document.createElement('div'); opts.className = 'opts'; const buttons = [];
+      q.options.forEach((opt, idx) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'opt';
+        const key = document.createElement('span'); key.className = 'key'; key.textContent = String.fromCharCode(65 + idx);
+        const label = document.createElement('span'); label.textContent = opt;
+        b.append(key, label);
+        b.addEventListener('click', () => {
+          if (buttons.some(x => x.disabled)) return;
+          const right = idx === q.correctAnswerIndex;
+          buttons.forEach((x, j) => { x.disabled = true; if (j === q.correctAnswerIndex) x.classList.add('correct'); });
+          if (!right) b.classList.add('wrong');
+          const ex = document.createElement('div'); ex.className = 'explain ' + (right ? 'ok' : 'no');
+          const verdict = document.createElement('b'); verdict.textContent = right ? 'Correct. ' : 'Not quite. ';
+          ex.append(verdict, document.createTextNode(q.explanation)); wrap.appendChild(ex);
+          answered++; if (right) correct++; paintScore();
+        });
+        buttons.push(b); opts.appendChild(b);
+      });
+      wrap.appendChild(opts); elQuiz.appendChild(wrap);
+    });
+  }
+  function openLesson(idx){
+    const l = LESSONS[idx]; if (!l) return;
+    current = l; mode = 'explorer';
+    elBadge.textContent = l.badgeName ? 'Badge · ' + l.badgeName : 'Lesson';
+    elTitle.textContent = l.title;
+    elTake.textContent = '';
+    l.keyTakeaways.forEach(k => { const li = document.createElement('li'); li.innerHTML = inline(k); elTake.appendChild(li); });
+    elRes.textContent = '';
+    l.resources.forEach(r => {
+      const a = document.createElement('a'); a.className = 'res'; a.href = r.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      const left = document.createElement('span'); left.textContent = r.title;
+      const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = [r.channel, r.duration].filter(Boolean).join(' · ');
+      a.append(left, meta); elRes.appendChild(a);
+    });
+    renderQuiz(l); paintMode();
+    dlg.querySelector('.reader-body').scrollTop = 0;
+    if (!dlg.open) dlg.showModal();
+  }
+  modeBtns.forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; paintMode(); }));
+  document.getElementById('reader-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+  // ================= WebGL capsule scene =================
+  const canvas = document.getElementById('scene');
+  const gl = canvas.getContext('webgl', { antialias: true, alpha: true }) ||
+             canvas.getContext('experimental-webgl', { antialias: true, alpha: true });
+  if (!gl) { canvas.style.display = 'none'; return; }
+
+  const mat4 = {
+    identity: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+    multiply: (a, b) => {
+      const o = new Float32Array(16);
+      for (let col = 0; col < 4; col++) for (let row = 0; row < 4; row++) {
+        let s = 0;
+        for (let k = 0; k < 4; k++) s += a[k*4+row] * b[col*4+k];
+        o[col*4+row] = s;
+      }
+      return o;
+    },
+    perspective: (fovy, aspect, near, far) => {
+      const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+      const o = new Float32Array(16);
+      o[0]=f/aspect; o[5]=f; o[10]=(far+near)*nf; o[11]=-1; o[14]=2*far*near*nf;
+      return o;
+    },
+    lookAt: (eye, center, up) => {
+      const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+      const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+      const norm=v=>{const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];};
+      const z = norm(sub(eye, center));
+      const x = norm(cross(up, z));
+      const y = cross(z, x);
+      const o = mat4.identity();
+      o[0]=x[0]; o[1]=x[1]; o[2]=x[2];
+      o[4]=y[0]; o[5]=y[1]; o[6]=y[2];
+      o[8]=z[0]; o[9]=z[1]; o[10]=z[2];
+      o[12]=-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]);
+      o[13]=-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]);
+      o[14]=-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]);
+      return o;
+    },
+    rotateY: (rad) => {
+      const c=Math.cos(rad), s=Math.sin(rad);
+      return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+    },
+    translate: (tx, ty, tz) => {
+      const o = mat4.identity();
+      o[12]=tx; o[13]=ty; o[14]=tz;
+      return o;
+    },
+  };
+
+  const SCENE_Y_OFFSET = -2.35;
+
+  function buildCapsule(radius, halfLen, capStacks, slices){
+    const positions = [], normals = [], colors = [];
+    const cGreen = [0.204,0.827,0.6], cSeam = [0.016,0.361,0.259], cWhite = [0.965,0.984,0.976];
+    const rings = [];
+    for (let i = 0; i <= capStacks; i++){
+      const phi = (i / capStacks) * (Math.PI / 2);
+      rings.push({ y: halfLen + radius*Math.cos(phi), r: radius*Math.sin(phi), ny: Math.cos(phi), nr: Math.sin(phi) });
+    }
+    rings.push({ y: -halfLen, r: radius, ny: 0, nr: 1 });
+    for (let i = 1; i <= capStacks; i++){
+      const phi = Math.PI/2 + (i / capStacks) * (Math.PI/2);
+      rings.push({ y: -halfLen + radius*Math.cos(phi), r: radius*Math.sin(phi), ny: Math.cos(phi), nr: Math.sin(phi) });
+    }
+    const total = rings.length, cols = slices + 1;
+    for (let i = 0; i < total; i++){
+      const v = i / (total - 1), ring = rings[i];
+      const nearSeam = Math.abs(v - 0.5) < 0.018;
+      const col = nearSeam ? cSeam : (v < 0.5 ? cGreen : cWhite);
+      for (let j = 0; j <= slices; j++){
+        const theta = (j / slices) * Math.PI * 2, ct = Math.cos(theta), st = Math.sin(theta);
+        positions.push(ring.r*ct, ring.y, ring.r*st);
+        normals.push(ring.nr*ct, ring.ny, ring.nr*st);
+        colors.push(col[0], col[1], col[2]);
+      }
+    }
+    const indices = [];
+    for (let i = 0; i < total - 1; i++)
+      for (let j = 0; j < slices; j++){
+        const a = i*cols+j, b = i*cols+j+1, c = (i+1)*cols+j, d = (i+1)*cols+j+1;
+        indices.push(a, c, b, b, c, d);
+      }
+    return { positions: new Float32Array(positions), normals: new Float32Array(normals),
+      colors: new Float32Array(colors), indices: new Uint16Array(indices) };
+  }
+  const capsule = buildCapsule(0.62, 0.38, 12, 32);
+
+  function makeBuffer(data, target){
+    const buf = gl.createBuffer();
+    gl.bindBuffer(target || gl.ARRAY_BUFFER, buf);
+    gl.bufferData(target || gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    return buf;
+  }
+  const posBuf = makeBuffer(capsule.positions), nrmBuf = makeBuffer(capsule.normals),
+        colBuf = makeBuffer(capsule.colors), idxBuf = makeBuffer(capsule.indices, gl.ELEMENT_ARRAY_BUFFER);
+
+  function compile(type, src){
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(vsSrc, fsSrc){
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  const capsuleProgram = program(
+    `attribute vec3 aPosition, aNormal, aColor;
+     uniform mat4 uModel, uView, uProj;
+     uniform mat3 uNormalMatrix;
+     varying vec3 vNormal, vColor, vWorldPos;
+     void main(){
+       vec4 world = uModel * vec4(aPosition, 1.0);
+       vWorldPos = world.xyz;
+       vNormal = normalize(uNormalMatrix * aNormal);
+       vColor = aColor;
+       gl_Position = uProj * uView * world;
+     }`,
+    `precision mediump float;
+     varying vec3 vNormal, vColor, vWorldPos;
+     uniform vec3 uLightDir, uCameraPos;
+     void main(){
+       vec3 N = normalize(vNormal);
+       vec3 L = normalize(uLightDir);
+       vec3 V = normalize(uCameraPos - vWorldPos);
+       vec3 H = normalize(L + V);
+       float diff = max(dot(N, L), 0.0);
+       float spec = pow(max(dot(N, H), 0.0), 42.0);
+       float rim = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+       vec3 color = vColor * (0.35 + 0.6 * diff) + vec3(1.0) * spec * 0.45 + vec3(0.36,0.86,0.66) * rim * 0.55;
+       gl_FragColor = vec4(color, 1.0);
+     }`
+  );
+  const particleProgram = program(
+    `attribute vec3 aPosition, aColor;
+     attribute float aSize;
+     uniform mat4 uView, uProj;
+     varying vec3 vColor;
+     void main(){
+       vec4 viewPos = uView * vec4(aPosition, 1.0);
+       gl_Position = uProj * viewPos;
+       gl_PointSize = aSize * (14.0 / max(-viewPos.z, 0.001));
+       vColor = aColor;
+     }`,
+    `precision mediump float;
+     varying vec3 vColor;
+     void main(){
+       vec2 c = gl_PointCoord - vec2(0.5);
+       float d = length(c);
+       if (d > 0.5) discard;
+       float a = smoothstep(0.5, 0.05, d);
+       gl_FragColor = vec4(vColor, a);
+     }`
+  );
+
+  const PARTICLE_COUNT = 26;
+  const particles = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
+    const seedA = (i * 12.9898) % 1, seedB = (i * 78.233) % 1;
+    return {
+      radius: 0.9 + seedA * 0.85, speed: 0.15 + seedB * 0.25, angle0: seedA * Math.PI * 2,
+      yOff: SCENE_Y_OFFSET + (seedB - 0.5) * 0.95, tilt: (seedA - 0.5) * 1.1,
+      size: 5 + seedB * 9, gold: i % 2 === 0,
+    };
+  });
+  const particlePosData = new Float32Array(PARTICLE_COUNT * 3);
+  const particleColData = new Float32Array(PARTICLE_COUNT * 3);
+  const particleSizeData = new Float32Array(PARTICLE_COUNT);
+  particles.forEach((p, i) => {
+    const c = p.gold ? [0.9,0.75,0.35] : [0.3,0.85,0.62];
+    particleColData[i*3]=c[0]; particleColData[i*3+1]=c[1]; particleColData[i*3+2]=c[2];
+    particleSizeData[i] = p.size;
+  });
+  const particlePosBuf = gl.createBuffer();
+  const particleColBuf = makeBuffer(particleColData);
+  const particleSizeBuf = makeBuffer(particleSizeData);
+
+  let theta = 0.5, phi = 1.25, radius = 9.5;
+  window.__camDebug = { get theta(){return theta}, get phi(){return phi}, get radius(){return radius} };
+  const MIN_R = 6, MAX_R = 15;
+  let dragging = false, lastX = 0, lastY = 0, idleTimer = 0;
+  const AUTO_ROTATE_DELAY = 2.2;
+
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; idleTimer = 0;
+    canvas.setPointerCapture?.(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    theta -= dx * 0.008;
+    phi = Math.min(Math.PI - 0.35, Math.max(0.35, phi - dy * 0.008));
+    idleTimer = 0;
+  });
+  const release = e => { dragging = false; if (e) canvas.releasePointerCapture?.(e.pointerId); };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    radius = Math.min(MAX_R, Math.max(MIN_R, radius + e.deltaY * 0.01));
+    idleTimer = 0;
+  }, { passive: false });
+
+  function resize(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth || canvas.parentElement.clientWidth;
+    const h = canvas.clientHeight || canvas.parentElement.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    syncHamburgerVisibility();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(0, 0, 0, 0);
+  const uModel = mat4.identity();
+  let last = performance.now();
+
+  function frame(now){
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!dragging){ idleTimer += dt; if (idleTimer > AUTO_ROTATE_DELAY) theta += dt * 0.12; }
+    const orbitTarget = [0, 0, 0];
+    const eyeWorld = [
+      orbitTarget[0] + radius * Math.sin(phi) * Math.sin(theta),
+      orbitTarget[1] + radius * Math.cos(phi),
+      orbitTarget[2] + radius * Math.sin(phi) * Math.cos(theta),
+    ];
+    const view = mat4.lookAt(eyeWorld, orbitTarget, [0, 1, 0]);
+    const aspect = canvas.width / canvas.height;
+    const proj = mat4.perspective(Math.PI / 4.2, aspect, 0.1, 100);
+    const rotModel = mat4.multiply(mat4.translate(0, SCENE_Y_OFFSET, 0), mat4.rotateY(now * 0.00006));
+
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.useProgram(capsuleProgram);
+    const aPos = gl.getAttribLocation(capsuleProgram, 'aPosition');
+    const aNrm = gl.getAttribLocation(capsuleProgram, 'aNormal');
+    const aCol = gl.getAttribLocation(capsuleProgram, 'aColor');
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, nrmBuf); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colBuf); gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.uniformMatrix4fv(gl.getUniformLocation(capsuleProgram, 'uModel'), false, rotModel);
+    gl.uniformMatrix4fv(gl.getUniformLocation(capsuleProgram, 'uView'), false, view);
+    gl.uniformMatrix4fv(gl.getUniformLocation(capsuleProgram, 'uProj'), false, proj);
+    gl.uniformMatrix3fv(gl.getUniformLocation(capsuleProgram, 'uNormalMatrix'), false,
+      new Float32Array([rotModel[0],rotModel[1],rotModel[2], rotModel[4],rotModel[5],rotModel[6], rotModel[8],rotModel[9],rotModel[10]]));
+    gl.uniform3fv(gl.getUniformLocation(capsuleProgram, 'uLightDir'), [0.4, 0.75, 0.7]);
+    gl.uniform3fv(gl.getUniformLocation(capsuleProgram, 'uCameraPos'), eyeWorld);
+    gl.drawElements(gl.TRIANGLES, capsule.indices.length, gl.UNSIGNED_SHORT, 0);
+
+    const t = now * 0.001;
+    particles.forEach((p, i) => {
+      const a = p.angle0 + t * p.speed;
+      particlePosData[i*3] = Math.cos(a) * p.radius;
+      particlePosData[i*3+1] = p.yOff + Math.sin(a * 1.3) * p.tilt;
+      particlePosData[i*3+2] = Math.sin(a) * p.radius * 0.85;
+    });
+    gl.bindBuffer(gl.ARRAY_BUFFER, particlePosBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, particlePosData, gl.DYNAMIC_DRAW);
+
+    gl.useProgram(particleProgram);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const pPos = gl.getAttribLocation(particleProgram, 'aPosition');
+    const pCol = gl.getAttribLocation(particleProgram, 'aColor');
+    const pSize = gl.getAttribLocation(particleProgram, 'aSize');
+    gl.bindBuffer(gl.ARRAY_BUFFER, particlePosBuf); gl.enableVertexAttribArray(pPos); gl.vertexAttribPointer(pPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleColBuf); gl.enableVertexAttribArray(pCol); gl.vertexAttribPointer(pCol, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleSizeBuf); gl.enableVertexAttribArray(pSize); gl.vertexAttribPointer(pSize, 1, gl.FLOAT, false, 0, 0);
+    gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, 'uView'), false, view);
+    gl.uniformMatrix4fv(gl.getUniformLocation(particleProgram, 'uProj'), false, proj);
+    gl.drawArrays(gl.POINTS, 0, PARTICLE_COUNT);
+    gl.disable(gl.BLEND);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
