@@ -8,7 +8,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist node_modules (
+if not exist "node_modules\.bin\tsx.cmd" (
   echo Installing for the first time, this takes a few minutes...
   call npm.cmd install
   if errorlevel 1 (
